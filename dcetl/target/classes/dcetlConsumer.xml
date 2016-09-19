@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+    
+    <!-- Need add xmlns:context="http://www.springframework.org/schema/context" -->
+    <context:property-placeholder location="classpath:smtp_email.properties"></context:property-placeholder>
+    
+    <jms:activemq-connector name="Active_MQ" username="${ACTIVEMQ_USERNAME}" password="${ACTIVEMQ_PASSWORD}" brokerURL="${ACTIVEMQ_BROKERURL}" validateConnections="true" doc:name="Active MQ" numberOfConsumers="1">
+        <reconnect frequency="60000" count="5"/>
+    </jms:activemq-connector>
+    <custom-filter class="filter.MqMessageFilter" name="CustomConsumerFilter" doc:name="Custom"/>
+    
+    <flow name="dcetlConsumerFlow">
+        <jms:inbound-endpoint  queue="${ACTIVEMQ_QUEUE_NAME}" connector-ref="Active_MQ" doc:name="JMS" >
+        </jms:inbound-endpoint>
+        <component class="component.ProcessFlowInit" doc:name="Consumer[initTaskTabList&amp;Lock]"/>
+        <expression-filter expression="#[payload.size()&gt;0]" doc:name="Payload is not null"/>
+        <splitter expression="#[payload]" doc:name="Splitter (source_sys_key&amp;table)"/>
+        <async doc:name="Async">
+            <component doc:name="CallDataPurgeWebservices" class="component.CallDataPurgeWebservices"/>
+            <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
+            <component class="component.PostDataPurge" doc:name="updateStatus&amp;TransferToLog"/>
+            <filter ref="CustomConsumerFilter" doc:name="Filter (message is not null)"/>
+            <component class="component.RmsCalSender" doc:name="Send to RMSCal"/>
+        </async>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="Dcetl program @Consumer @@#[server.dateTime.format(&quot;yyyy.MM.dd  HH:mm:ss&quot;)] run exception: #[exception.getDetailedMessage()]" doc:name="Set Exception Info"/>
+            <smtp:outbound-endpoint host="${SMTP_HOST}" user="${SMTP_USER}" password="${SMTP_PASSWORD}" to="${SMTP_TO}" from="${SMTP_FROM}" subject="${SMTP_EMAIL_SUBJECT}" responseTimeout="10000" doc:name="Send Exception Email"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>

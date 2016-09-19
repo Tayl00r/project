@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" 
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:context="http://www.springframework.org/schema/context" 
+	xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+	xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+    
+    <!-- Need add xmlns:context="http://www.springframework.org/schema/context"  -->
+    <context:property-placeholder location="classpath:smtp_email.properties"></context:property-placeholder>
+    
+    <custom-filter class="filter.MqMessageFilter" name="CustomDcetlFilter" doc:name="Custom"/>
+    
+    <flow name="dcetlMainFlow">
+        <poll doc:name="Poll">
+            <fixed-frequency-scheduler frequency="30" timeUnit="MINUTES" startDelay="2"/>
+            <component class="component.ProcessFlowInit" doc:name="initTaskTabList&amp;Lock"/>
+        </poll>
+        <expression-filter expression="#[payload.size()&gt;0]" doc:name="Payload is not null"/>
+        <splitter expression="#[payload]" doc:name="Splitter (source_sys_key&amp;table)"/>
+        <async doc:name="Async">
+            <component doc:name="CallDataPurgeWebservices" class="component.CallDataPurgeWebservices"/>
+            <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
+            <component class="component.PostDataPurge" doc:name="updateStatus&amp;TransferToLog"/>
+            <filter ref="CustomDcetlFilter" doc:name="Filter (message is not null)"/>
+            <component class="component.RmsCalSender" doc:name="Send to RMSCal"/>
+        </async>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="Dcetl program @@#[server.dateTime.format(&quot;yyyy.MM.dd  HH:mm:ss&quot;)] run exception: #[exception.getDetailedMessage()]"  doc:name="Set Exception Info"/>
+            <smtp:outbound-endpoint host="${SMTP_HOST}" user="${SMTP_USER}" password="${SMTP_PASSWORD}" to="{SMTP_TO}" from="${SMTP_FROM}" subject="${SMTP_EMAIL_SUBJECT}" responseTimeout="10000" doc:name="Send Exception Email"/>
+        </catch-exception-strategy>
+    </flow>
+    
+</mule>

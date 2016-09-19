@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" 
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+	xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd">
+    
+    <!-- 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8099" doc:name="HTTP Listener Configuration"/>
+    -->
+    
+    <!-- Need add xmlns:context="http://www.springframework.org/schema/context"  -->
+    <context:property-placeholder location="classpath*:webservices.properties"></context:property-placeholder>
+    
+    <flow name="dcetlWebserviceFlow" initialState="started">
+        
+    	<!-- Provide HTTP inbound webservice entry -->
+    	<http:inbound-endpoint address="http://0.0.0.0:8099/services/DataPurgeService" exchange-pattern="request-response" doc:name="HTTP DataPurgeService" encoding="UTF-8">  
+        	<cxf:simple-service serviceClass="iface.IDataPurgeService"/>
+    	</http:inbound-endpoint>  
+    	
+        <!--  
+        <custom-transformer class="iface.impl.DataPurgeService" doc:name="Java"/> 
+        -->  
+    	<component class="iface.impl.DataPurgeService" doc:name="DataPurgeService Java Impl"/>
+    	
+  	</flow> 
+    
+</mule>

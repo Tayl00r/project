@@ -1,0 +1,3 @@
+1. 修改resources目录下的相关properties文件
+2. 替换lib目录下的activemq为生产环境的jar
+3. 修改项目属性，run/debug settings里边的vm参数值为生产环境的keystore等
