@@ -17,6 +17,11 @@ public class DcProcessTaskQueues implements Serializable {
 	private String status_code;
 	private String process_message;
 	private String source_ref_doc_id;
+	private int retry_times;
+	
+	
+	//add activity_node
+	private String active_node_id;
 	
 	// 行
 	DcProcessTaskQueueDetails dcProcessTaskQueueDetails;
@@ -34,6 +39,8 @@ public class DcProcessTaskQueues implements Serializable {
 		this.status_code = e.getStatus_code();
 		this.process_message = e.getProcess_message();
 		this.source_ref_doc_id = e.getSource_ref_doc_id();
+		this.retry_times = e.getRetry_times();
+		this.active_node_id = e.getActive_node_id();
 		this.dcProcessTaskQueueDetails = e.getDcProcessTaskQueueDetails();
 	}
 
@@ -101,12 +108,29 @@ public class DcProcessTaskQueues implements Serializable {
 		this.dcProcessTaskQueueDetails = dcProcessTaskQueueDetails;
 	}
 
+	public int getRetry_times() {
+		return retry_times;
+	}
+
+	public void setRetry_times(int retry_times) {
+		this.retry_times = retry_times;
+	}
+
+	
+	public String getActive_node_id() {
+		return active_node_id;
+	}
+
+	public void setActive_node_id(String parent_node_id) {
+		this.active_node_id = parent_node_id;
+	}
+
 	@Override
 	public String toString() {
 		return "DcProcessTaskQueues [task_queue_id=" + task_queue_id + ", task_type_code=" + task_type_code
 				+ ", source_sys_key=" + source_sys_key + ", process_group_id=" + process_group_id + ", status_code="
 				+ status_code + ", process_message=" + process_message + ", source_ref_doc_id=" + source_ref_doc_id
-				+ ", dcProcessTaskQueueDetails=" + dcProcessTaskQueueDetails.toString() + "]";
+				+ ", retry_times=" + retry_times + ", dcProcessTaskQueueDetails=" + dcProcessTaskQueueDetails.toString() + "]";
 	}
 
 }

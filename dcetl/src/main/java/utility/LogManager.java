@@ -12,7 +12,7 @@ public class LogManager {
 		int debugModeLevel = GlobalInfo.DEBUG_MODE;
 		if ("Y".equalsIgnoreCase(GlobalInfo.ENABLE_DEBUG_FLAG) && 
 				debugModeLevel <= GlobalInfo.DEBUG_LEVEL) {
-			System.out.println(logMessage);
+			//System.out.println(logMessage);
 			logger.info(logMessage);
 		}
 	}
@@ -20,7 +20,7 @@ public class LogManager {
 	public static void appendToLog(String logMessage, int debugModeLevel) {
 		if ("Y".equalsIgnoreCase(GlobalInfo.ENABLE_DEBUG_FLAG) && 
 				debugModeLevel <= GlobalInfo.DEBUG_LEVEL) {
-			System.out.println(logMessage);
+			//System.out.println(logMessage);
 			logger.info(logMessage);
 		}
 	}

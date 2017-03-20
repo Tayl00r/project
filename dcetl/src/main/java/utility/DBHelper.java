@@ -24,6 +24,8 @@ public class DBHelper {
 	public Connection conn;
 	public ResultSet resultSet = null;
 	public PreparedStatement prepareStatement = null;
+	public ResultSet resultSetBatch = null;  // 批量获取的时候存放结果集
+	public PreparedStatement prepareStatementBatch = null;  // 批量获取的时候存放pstmt对象
 	public Integer batchSize;
 	public Integer currentSize; 
 	//public static String INSERT_TYPE = "INSERT";
@@ -107,6 +109,7 @@ public class DBHelper {
 		this.currentErrorSql = currentErrorSql;
 	}
 
+	//默认:已有连接方式
 	public DBHelper(String dbDriver, String dbUrl, String dbUser, String dbPassWd, Integer batchSize) throws ClassNotFoundException, SQLException {
 		this.dbDriver = dbDriver;
 		this.dbUrl = dbUrl;
@@ -139,6 +142,12 @@ public class DBHelper {
 		if(prepareStatement!=null && !prepareStatement.isClosed()){
 			this.prepareStatement.close();
 		}
+		if (resultSetBatch!=null && !resultSetBatch.isClosed()){
+			this.resultSetBatch.close();
+		}
+		if(prepareStatementBatch!=null && !prepareStatementBatch.isClosed()){
+			this.prepareStatementBatch.close();
+		}
 		//if(conn!=null && !conn.isClosed()){
 		//	this.conn.close();
 		//}
@@ -152,6 +161,12 @@ public class DBHelper {
 		if(prepareStatement!=null && !prepareStatement.isClosed()){
 			this.prepareStatement.close();
 		}
+		if (resultSetBatch!=null && !resultSetBatch.isClosed()){
+			this.resultSetBatch.close();
+		}
+		if(prepareStatementBatch!=null && !prepareStatementBatch.isClosed()){
+			this.prepareStatementBatch.close();
+		}
 		if(conn!=null && !conn.isClosed()){
 			this.conn.close();
 		}
@@ -161,31 +176,74 @@ public class DBHelper {
 	public void executeQuery(String querySql, Object ...args) throws SQLException{
 		
 		// 输出sql，用于调试
+		//LogManager.appendToLog("args.length=" + args.length, GlobalInfo.DEBUG_MODE);
 		LogManager.appendToLog( getPreparedStatementSQL(querySql, args) );
 		
 		prepareStatement  = conn.prepareStatement(querySql);
 		
-		for (int i=0; i<args.length; i++){
-			int index = i + 1;
-//			if (args[i] instanceof Integer){
-//				prepareStatement.setInt(index, (int) args[i]);
-//			}
-//			else if(args[i] instanceof String){
-//				prepareStatement.setString(index, (String) args[i]);
-//			}
-			if (args[i] == null) {
-				prepareStatement.setNull(index, Types.NULL);
-			} else {
-				prepareStatement.setObject(index, args[i]);
+		if (args != null) {
+			for (int i=0; i<args.length; i++){
+				int index = i + 1;
+	//			if (args[i] instanceof Integer){
+	//				prepareStatement.setInt(index, (int) args[i]);
+	//			}
+	//			else if(args[i] instanceof String){
+	//				prepareStatement.setString(index, (String) args[i]);
+	//			}
+				if (args[i] == null) {
+					prepareStatement.setNull(index, Types.NULL);
+				} else {
+					prepareStatement.setObject(index, args[i]);
+				}
+			}
+		}
+				
+		resultSet = prepareStatement.executeQuery();	
+	}
+	
+	// Execute Query according querySql and parameters args
+	public void executeQueryBatch(String querySql, Object ...args) throws SQLException{
+			
+		// 输出sql，用于调试
+		LogManager.appendToLog( getPreparedStatementSQL(querySql, args) );
+			
+		prepareStatementBatch  = conn.prepareStatement(querySql
+				,ResultSet.TYPE_FORWARD_ONLY
+				,ResultSet.CONCUR_READ_ONLY
+				);
+		
+		if (args != null) {
+			for (int i=0; i<args.length; i++){
+				int index = i + 1;
+//				if (args[i] instanceof Integer){
+//					prepareStatementBatch.setInt(index, (int) args[i]);
+//				}
+//				else if(args[i] instanceof String){
+//					prepareStatementBatch.setString(index, (String) args[i]);
+//				}
+				if (args[i] == null) {
+					prepareStatementBatch.setNull(index, Types.NULL);
+				} else {
+					prepareStatementBatch.setObject(index, args[i]);
+				}
 			}
 		}
 		
-		resultSet = prepareStatement.executeQuery();	
+		// 解决数据量获取太大报内存溢出的bug( Java heap space (java.lang.OutOfMemoryError) )
+		prepareStatementBatch.setFetchSize(Integer.MIN_VALUE);
+		prepareStatementBatch.setFetchDirection(ResultSet.FETCH_FORWARD);
+				
+		resultSetBatch = prepareStatementBatch.executeQuery();	
 	}
 	
 	public void prepareSql(String insertSql) throws SQLException{
 		prepareStatement  = conn.prepareStatement(insertSql);
 		currentSize = 0;
+		
+		try {
+			setCurrentErrorSql(insertSql);
+		} catch (Exception e) {
+		}
 	}
 	
 	public int setAndExecuteDML(List<Object> params) throws SQLException{
@@ -289,6 +347,12 @@ public class DBHelper {
 				}
 				currentSize = 0;
 			}
+		}
+	}
+	
+	public void clearBatch() throws SQLException {
+		if(prepareStatement != null && !prepareStatement.isClosed()){
+			this.prepareStatement.clearBatch();
 		}
 	}
 	

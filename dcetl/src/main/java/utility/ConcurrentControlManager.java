@@ -66,6 +66,7 @@ public class ConcurrentControlManager extends Thread {
 		try {
 			// execute query
 			dcETLHelper.executeQuery(GlobalSql.QUERY_CONCURRENT_CTRL_INFO, (Object[])args);
+			
 			if (dcETLHelper.resultSet.next()) {
 				DP_CONCURRENT_CONTROL_ID = dcETLHelper.resultSet.getString("DP_CONCURRENT_CONTROL_ID");
 				CONCURRENT_STATUS = dcETLHelper.resultSet.getString("CONCURRENT_STATUS");
@@ -144,6 +145,12 @@ public class ConcurrentControlManager extends Thread {
 			dcETLHelper.commit();
 			
 		} catch (Exception e) {
+			try {
+				dcETLHelper.rollback();
+			} catch (SQLException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 			e.printStackTrace();
 			LogManager.appendToLog("DpInstanceLogger.run() => Exception: " + e.toString() +  " *** " + 
 					dcETLHelper.getCurrentErrorSql(),
@@ -151,7 +158,6 @@ public class ConcurrentControlManager extends Thread {
 		} finally {
 			if (dcETLHelper != null) {
 				try {
-					dcETLHelper.rollback();
 					dcETLHelper.closeAll();
 				} catch (Exception e) {
 					e.printStackTrace();

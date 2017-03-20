@@ -14,12 +14,12 @@ public class Test {
 		System.out.println( GeneratorUUID.generateUUID() );
 		
 		
-		String sourceSysKey = "SUGON";
-		String sourceTabOwner = "srm";
-		String sourceTabName = "ap_doc_headers";
-		String dpStartDate = null; //"2014-05-01 00:00:00";
-		String dpEndDate = null;  //"2016-05-20 00:00:00";
-		String initialDataImpFlag = "N";
+		String sourceSysKey = "highly";
+		String sourceTabOwner = "srmtest";
+		String sourceTabName = "transaction_lines";
+		String dpStartDate = "2016-01-01 00:00:00";
+		String dpEndDate = "2016-05-20 00:00:00";
+		String initialDataImpFlag = "Y";
 		
 		// 数据清洗
 		

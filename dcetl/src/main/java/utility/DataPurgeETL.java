@@ -15,6 +15,7 @@ import config.GlobalInfo;
 import config.GlobalSql;
 import iface.parameter.IfaceParameters;
 import iface.parameter.IfaceReturns;
+import entity.DcSysDbConnMapping;
 import entity.QueryDPInstanceConfigsRsEO;
 import entity.QuerySourceTabColRsEO;
 import entity.QueryTabColumnsRsEO;
@@ -26,6 +27,7 @@ import entity.QueryTabColumnsRsEO;
 public class DataPurgeETL {
 	
 	private DBHelper dcETLHelper = null;
+	private String logExecuteSqlSummary = null;
 
 	public DBHelper getDcETLHelper() {
 		return dcETLHelper;
@@ -97,7 +99,7 @@ public class DataPurgeETL {
 		                				    GlobalInfo.DB_DCETL_PASSWORD, 
 		                				    null);
 		}
-		String[] args = new String[]{ sourceSysKey, sourceSysKey, 
+		String[] args = new String[]{ sourceSysKey, sourceSysKey, sourceSysKey, 
 				                      sourceTabOwner, sourceTabName, sourceSysKey, 
 		          					  GlobalInfo.LOOKUP_TYPE_DCETL_SOUR_SYS_KEY };
 		
@@ -115,7 +117,12 @@ public class DataPurgeETL {
 				rsEO.setSource_dp_tab_filter_condit3(dcETLHelper.resultSet.getString("SOURCE_DP_TAB_FILTER_CONDIT3"));
 				rsEO.setSource_dp_tab_filter_condit4(dcETLHelper.resultSet.getString("SOURCE_DP_TAB_FILTER_CONDIT4"));
 				rsEO.setSource_dp_tab_filter_condit5(dcETLHelper.resultSet.getString("SOURCE_DP_TAB_FILTER_CONDIT5"));
-				rsEO.setDest_dp_table_owner(dcETLHelper.resultSet.getString("DEST_DP_TABLE_OWNER"));
+				// 分库分表的处理
+				//if (GlobalInfo.sysDbConnMapping.getDb_schema() != null && !"".equals(GlobalInfo.sysDbConnMapping.getDb_schema())) {
+				//	rsEO.setDest_dp_table_owner(GlobalInfo.sysDbConnMapping.getDb_schema());
+				//} else {
+					rsEO.setDest_dp_table_owner(dcETLHelper.resultSet.getString("DEST_DP_TABLE_OWNER"));
+				//}
 				rsEO.setDest_dp_table_name(dcETLHelper.resultSet.getString("DEST_DP_TABLE_NAME"));
 				rsEO.setDo_dp_per_seconds(dcETLHelper.resultSet.getInt("DO_DP_PER_SECONDS"));
 				rsEO.setDp_tolerance_seconds(dcETLHelper.resultSet.getInt("DP_TOLERANCE_SECONDS"));
@@ -127,6 +134,9 @@ public class DataPurgeETL {
 				}
 				rsEO.setDp_inst_config_autoc_id(dcETLHelper.resultSet.getString("DP_INST_CONFIG_AUTOC_ID"));
 				rsEO.setSource_sys_key(dcETLHelper.resultSet.getString("SOURCE_SYS_KEY"));
+				rsEO.setDp_rules_header_id(dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID"));  // 同时取出规则头
+				
+				LogManager.appendToLog("QueryDPInstanceConfigsRsEO-rsEO:" + rsEO.toString(), GlobalInfo.DEBUG_MODE);
 				
 				dpTabList.add(rsEO);
 			}
@@ -219,6 +229,7 @@ public class DataPurgeETL {
 			while (dcETLHelper.resultSet.next()) {
 				QuerySourceTabColRsEO rsEO = new QuerySourceTabColRsEO();
 				
+				rsEO.setDp_rules_header_id(dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID"));  // Added by chao.tang@2017-02-10 for 日志分析
 				rsEO.setSource_sys_key(dcETLHelper.resultSet.getString("SOURCE_SYS_KEY"));
 				rsEO.setSource_table_owner(dcETLHelper.resultSet.getString("SOURCE_TABLE_OWNER"));
 				rsEO.setSource_table_name(dcETLHelper.resultSet.getString("SOURCE_TABLE_NAME"));
@@ -244,6 +255,205 @@ public class DataPurgeETL {
 		
 		return dpTabColumnList;
 	}
+	
+	// 获取维护的规则头ID
+	public String getDpRulesHeaderId(String sourceSysKey,
+									 String sourceTabOwner,
+									 String sourceTabName) throws ClassNotFoundException, SQLException {
+						
+		String dpRulesHeaderId = null;
+						
+		if (dcETLHelper == null) {
+			/*DBHelper*/ dcETLHelper = new DBHelper(GlobalInfo.DB_DCETL_DRIVER,
+								GlobalInfo.DB_DCETL_URL, 
+								GlobalInfo.DB_DCETL_USER_NAME,
+								GlobalInfo.DB_DCETL_PASSWORD, 
+								null);
+		}
+		String[] args = new String[]{ sourceTabOwner, sourceTabName, sourceSysKey };
+		try {
+			// execute query
+			dcETLHelper.executeQuery(GlobalSql.QUERY_SOUR_TAB_RULES_HEADER_ID, (Object[])args);
+
+			if (dcETLHelper.resultSet.next()) {
+				dpRulesHeaderId = dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID");
+			}
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+			LogManager.appendToLog("getDpRulesHeaderId() => Exception: " + e.toString(), 
+					GlobalInfo.EXCEPTION_MODE);
+			throw e;
+		} finally {
+			dcETLHelper.close();
+		}
+						
+		return dpRulesHeaderId;
+	}
+
+	// 输出调试信息，为了方便调试和定位取不到规则的原因
+	public void printDebugStackInfo(String sourceSysKey,
+									String sourceTabOwner,
+									String sourceTabName,
+									String destTabOwner,
+									String destTabName,
+									String dpRulesHeaderId) {
+		String debugMsgPrefix = "printDebugStackInfo["+sourceSysKey+"~"+sourceTabName+"]:>>";
+		
+		LogManager.appendToLog(debugMsgPrefix+"*****************************************************************");
+		LogManager.appendToLog(debugMsgPrefix+"****************************** START ****************************");
+		LogManager.appendToLog(debugMsgPrefix+"*****************************************************************");
+		
+		try {
+			LogManager.appendToLog(debugMsgPrefix + "[" + sourceSysKey + "][" + sourceTabOwner + "." + sourceTabName + 
+					"][" + destTabOwner + "." + destTabName + "][dpRulesHeaderId=" + dpRulesHeaderId + "]");
+			
+			if (dcETLHelper == null) {
+				/*DBHelper*/ dcETLHelper = new DBHelper(GlobalInfo.DB_DCETL_DRIVER,
+									GlobalInfo.DB_DCETL_URL, 
+									GlobalInfo.DB_DCETL_USER_NAME,
+									GlobalInfo.DB_DCETL_PASSWORD, 
+									null);
+			}
+			
+			LogManager.appendToLog(debugMsgPrefix + "(1)Get dp_rules_headers_all info");
+			// execute query
+			String sql = "select drh.DP_RULES_HEADER_ID, drh.ENABLED_FLAG " + 
+					  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh " +  
+					  " where drh.ENABLED_FLAG = 'Y' " + 
+					  "   and drh.VALIDATED_FLAG = 'Y' " + 
+					  "   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
+					  "   and drh.SOURCE_TABLE_OWNER = ? " + 
+					  "   and drh.SOURCE_TABLE_NAME = ? " + 
+					  "   and drh.SOURCE_SYS_KEY = ? ";
+			dcETLHelper.executeQuery(sql, (Object[]) new String[]{ sourceTabOwner, sourceTabName, sourceSysKey });
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[1.1]" + dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID") + "~" + 
+						dcETLHelper.resultSet.getString("ENABLED_FLAG") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(2)Get dp_rules_headers_all info by DpRulesHeaderId");
+			// execute query
+			sql = "select drh.DP_RULES_HEADER_ID, drh.ENABLED_FLAG " + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh " +  
+				  " where drh.DP_RULES_HEADER_ID = ? ";
+			dcETLHelper.executeQuery(sql, (Object[]) new String[]{ dpRulesHeaderId });
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[2.1]" + dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID") + "~" + 
+						dcETLHelper.resultSet.getString("ENABLED_FLAG") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(3)Get COUNT(dp_rules_headers_all) ");
+			// execute query
+			sql = "select count(1) AS TOTAL_CNT" + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh ";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[3.1]" + dcETLHelper.resultSet.getInt("TOTAL_CNT") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(4)Get dp_rules_headers_all limit 3");
+			// execute query
+			sql = "select drh.DP_RULES_HEADER_ID, drh.ENABLED_FLAG" + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh  limit 3";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[4.1]" + dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID") + "~" + 
+						dcETLHelper.resultSet.getString("ENABLED_FLAG") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(5)Get dp_rules_lines_all info ");
+			// execute query
+			sql = "select drl.DP_RULES_HEADER_ID, drl.DP_RULES_LINE_ID, drl.SOURCE_TAB_COLUMN_NAME, drl.DEST_TAB_COLUMN_NAME " + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all  drl" +  
+				  " where drl.DP_RULES_HEADER_ID = ? ";
+			dcETLHelper.executeQuery(sql, (Object[])new String[]{ dpRulesHeaderId });
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[5.1]" + dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID") + "~" + 
+						dcETLHelper.resultSet.getString("DP_RULES_LINE_ID") + "~" + 
+						dcETLHelper.resultSet.getString("SOURCE_TAB_COLUMN_NAME") + "~" + 
+						dcETLHelper.resultSet.getString("DEST_TAB_COLUMN_NAME") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(6)Get COUNT(dp_rules_lines_all) ");
+			// execute query
+			sql = "select count(1) AS TOTAL_CNT" + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all drl ";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[6.1]" + dcETLHelper.resultSet.getInt("TOTAL_CNT") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(7)Get dp_rules_lines_all info ");
+			// execute query
+			sql = "select drl.DP_RULES_HEADER_ID, drl.DP_RULES_LINE_ID, drl.SOURCE_TAB_COLUMN_NAME, drl.DEST_TAB_COLUMN_NAME " + 
+				  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all  drl  limit 5";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[7.1]" + dcETLHelper.resultSet.getString("DP_RULES_HEADER_ID") + "~" + 
+						dcETLHelper.resultSet.getString("DP_RULES_LINE_ID") + "~" + 
+						dcETLHelper.resultSet.getString("SOURCE_TAB_COLUMN_NAME") + "~" + 
+						dcETLHelper.resultSet.getString("DEST_TAB_COLUMN_NAME") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(8) SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCKS; ");
+			// execute query
+			sql = "SELECT t.lock_id,t.lock_trx_id,t.lock_mode,t.lock_type,t.lock_table,t.lock_index,t.lock_data FROM INFORMATION_SCHEMA.INNODB_LOCKS t";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[8.1]" + dcETLHelper.resultSet.getString("lock_id") + "~" + 
+						dcETLHelper.resultSet.getString("lock_trx_id") + "~" + 
+						dcETLHelper.resultSet.getString("lock_mode") + "~" + 
+						dcETLHelper.resultSet.getString("lock_type") + "~" +
+						dcETLHelper.resultSet.getString("lock_table") + "~" +
+						dcETLHelper.resultSet.getString("lock_index") + "~" + 
+						dcETLHelper.resultSet.getString("lock_data") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix + "(9) SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCK_WAITS; ");
+			// execute query
+			sql = "SELECT t.requesting_trx_id,t.requested_lock_id,t.blocking_trx_id,t.blocking_lock_id FROM INFORMATION_SCHEMA.INNODB_LOCK_WAITS t";
+			dcETLHelper.executeQuery(sql, null);
+			while (dcETLHelper.resultSet.next()) {
+				LogManager.appendToLog(debugMsgPrefix + "[9.1]" + dcETLHelper.resultSet.getString("requesting_trx_id") + "~" + 
+						dcETLHelper.resultSet.getString("requested_lock_id") + "~" + 
+						dcETLHelper.resultSet.getString("blocking_trx_id") + "~" + 
+						dcETLHelper.resultSet.getString("blocking_lock_id") + "~");
+			}
+			dcETLHelper.close();
+			
+			LogManager.appendToLog(debugMsgPrefix+"*****************************************************************");
+			LogManager.appendToLog(debugMsgPrefix+"****************************** END ******************************");
+			LogManager.appendToLog(debugMsgPrefix+"*****************************************************************");
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+			LogManager.appendToLog(debugMsgPrefix + "Exception: " + e.toString(), 
+					GlobalInfo.EXCEPTION_MODE);
+		} finally {
+			try {
+				if (dcETLHelper != null) {
+					dcETLHelper.close();
+				}
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+						
+		LogManager.appendToLog("*************************************************************************************");
+		LogManager.appendToLog("*************************************************************************************");
+		LogManager.appendToLog("*************************************************************************************");
+	}
+	
 	
 	// 根据表参数，获取data purge 列信息（未维护规则的表列）
 	public List<QueryTabColumnsRsEO> getDataPurgeTabColumnListsOf(String tableOwner,
@@ -421,7 +631,7 @@ public class DataPurgeETL {
 		}
 		
 		LogManager.appendToLog("源tableColumnName: " + tableColumnName + 
-				" => 目标returnColumnName: " + returnColumnName, GlobalInfo.STATEMENT_MODE);
+				" => 目标returnColumnName: " + returnColumnName, GlobalInfo.DEBUG_MODE);
 		
 		return returnColumnName.trim();
 	}
@@ -461,20 +671,23 @@ public class DataPurgeETL {
 		Date newLastDpDatetime = rs_last_dp_datetime;
 		
 		//============>
+		// fix bug by chao.tang@2016-09-23 for 数据缺失 Begin
 		if (paramDpStartDate == null && paramDpEndDate == null) {
 			newLastDpDatetime = currentSysDatetime;  // now()
 		} else {
 			if (rs_last_dp_datetime != null) {
-				if (paramDpStartDate == null && paramDpEndDate != null && 
-						paramDpEndDate.compareTo(newLastDpDatetime) >= 0 ) {
-					if (paramDpEndDate.compareTo(currentSysDatetime) >= 0) {
-						newLastDpDatetime = currentSysDatetime;  // now()
-					} else {
-						newLastDpDatetime = paramDpEndDate;
+				if (paramDpStartDate == null && paramDpEndDate != null) { 
+					if (paramDpEndDate.compareTo(newLastDpDatetime) >= 0 ) {
+						if (paramDpEndDate.compareTo(currentSysDatetime) >= 0) {
+							newLastDpDatetime = currentSysDatetime;  // now()
+						} else {
+							newLastDpDatetime = paramDpEndDate;
+						}
 					}
-				} else if (paramDpStartDate != null && paramDpEndDate == null && 
-						paramDpStartDate.compareTo(newLastDpDatetime) <= 0) {
-					newLastDpDatetime = currentSysDatetime;  // now()
+				} else if (paramDpStartDate != null && paramDpEndDate == null) {
+					if (paramDpStartDate.compareTo(newLastDpDatetime) <= 0) {
+						newLastDpDatetime = currentSysDatetime;  // now()
+					}
 				} else if (paramDpStartDate != null && paramDpEndDate != null) {
 					if (paramDpEndDate.compareTo(newLastDpDatetime) >= 0 && 
 							paramDpStartDate.compareTo(newLastDpDatetime) <= 0) {
@@ -488,21 +701,25 @@ public class DataPurgeETL {
 				}
 			} else {
 				// 因为上一次同步时间为空，并不知道表中数据的情况，所以此处不能根据 paramDpStartDate 简单的判断
-				if (paramDpStartDate == null && paramDpEndDate != null) { 
+				if (paramDpEndDate != null) { 
 					if (paramDpEndDate.compareTo(currentSysDatetime) >= 0) {
 						newLastDpDatetime = currentSysDatetime;  // now()
 					} else {
 						newLastDpDatetime = paramDpEndDate;
 					}
+				} else {
+					newLastDpDatetime = currentSysDatetime;  // now()
 				}
 			} // rs_last_dp_datetime != null
 		}
+		// fix bug by chao.tang@2016-09-23 for 数据缺失 End
 		
 		return newLastDpDatetime;
 	}
 	
 	// 数据批量动态插入
-	public int insertDataBySelectRsBatch(String insertIntoTabColumn,
+	public int insertDataBySelectRsBatch(DcSysDbConnMapping sysDbConnMapping,
+			                             String insertIntoTabColumn,
 			                             String selectRsSql,
 			                             List<Object> selectArgs,
 			                             String destTableOwner,
@@ -523,28 +740,39 @@ public class DataPurgeETL {
 		
 		LogManager.appendToLog("commitFlag:" + commitFlag);
 		
-		if (dcETLHelper == null) {
-			/*DBHelper*/ dcETLHelper = new DBHelper(GlobalInfo.DB_DCETL_DRIVER,
+		//目标数据库的连接
+		//if (dcETLHelper == null) {
+			DBHelper dcETLHelperDest = new DBHelper(GlobalInfo.DB_DCETL_DRIVER,
+					    					sysDbConnMapping.getDb_url(), 
+					    					sysDbConnMapping.getDb_conn_user(),
+					    					sysDbConnMapping.getDb_conn_password(), 
+					    					GlobalInfo.MAX_BATCH_SIZE);
+		//} else {
+			dcETLHelperDest.setBatchSize(GlobalInfo.MAX_BATCH_SIZE);
+		//}
+		
+		List<Object> args = new ArrayList<Object>();
+		
+		// 获取大记录结果集，单独创建一个connection
+		DBHelper dcETLHelperBatch = new DBHelper(GlobalInfo.DB_DCETL_DRIVER,
 					    					GlobalInfo.DB_DCETL_URL, 
 					    					GlobalInfo.DB_DCETL_USER_NAME,
 					    					GlobalInfo.DB_DCETL_PASSWORD, 
 					    					GlobalInfo.MAX_BATCH_SIZE);
-		} else {
-			dcETLHelper.setBatchSize(GlobalInfo.MAX_BATCH_SIZE);
-		}
-		
-		List<Object> args = new ArrayList<Object>();
 		
 		try {
 			// execute query
-			dcETLHelper.executeQuery(selectRsSql, 
+			dcETLHelperBatch.executeQueryBatch(selectRsSql, 
 					//TypeConversionUtil.listObjectToObjectArray(selectArgs)
 					selectArgs.toArray()
 					);
 			
+			this.logExecuteSqlSummary = this.logExecuteSqlSummary + dcETLHelperBatch.getCurrentErrorSql();
+			
 			// 获取记录的列数
-			ResultSetMetaData rsmd = dcETLHelper.resultSet.getMetaData();
+			ResultSetMetaData rsmd = dcETLHelperBatch.resultSetBatch.getMetaData();
 			int selectRsColCount = rsmd.getColumnCount();
+			LogManager.appendToLog("selectRsColCount:" + selectRsColCount);
 			
 			//===============================================
 			// 拼接insert into ... values ... 语句
@@ -591,64 +819,81 @@ public class DataPurgeETL {
 			//===============================================
 			// 循环select的记录
 			//===============================================
-			dcETLHelper.prepareSql(insertIntoFixedSql);
+			dcETLHelperDest.prepareSql(insertIntoFixedSql);
+			this.logExecuteSqlSummary = dcETLHelperDest.getCurrentErrorSql() + GlobalInfo.LINE_SEPARATOR + this.logExecuteSqlSummary;
 			//LogManager.appendToLog("insertIntoFixedSql:" + insertIntoFixedSql);
 			
-			while (dcETLHelper.resultSet.next()) {
+			LogManager.appendToLog(" >> start fetch resultSetBatch: while (dcETLHelperBatch.resultSetBatch.next()) >>> ", GlobalInfo.DEBUG_MODE);
+			
+			int loopCount = 0;
+			while (dcETLHelperBatch.resultSetBatch.next()) {
+				loopCount++;
+				//LogManager.appendToLog("currentLoopCount:" + loopCount);
+				
 				args.clear();
 				for (int i=1; i<=selectRsColCount; i++) {
-					args.add(dcETLHelper.resultSet.getObject( rsmd.getColumnLabel(i) ));
+					args.add(dcETLHelperBatch.resultSetBatch.getObject( rsmd.getColumnLabel(i) ));
 				}
 				
 				//重复记录的处理
 				if (onDuplicateKeyFlag) {
 					// 更新维护的映射值
 					for (int i=0; i<inRulesTabColList.size(); i++) {
-						args.add(dcETLHelper.resultSet.getObject( inRulesTabColList.get(i).getSource_tab_column_name() ));
+						args.add(dcETLHelperBatch.resultSetBatch.getObject( inRulesTabColList.get(i).getSource_tab_column_name() ));
 					}
 					// 更新未维护的映射值
 					for (int i=0; i<notInRulesTabColList.size(); i++) {
-						args.add(dcETLHelper.resultSet.getObject( notInRulesTabColList.get(i).getSource_tab_column_name() ));
+						args.add(dcETLHelperBatch.resultSetBatch.getObject( notInRulesTabColList.get(i).getSource_tab_column_name() ));
 					}
 					// 如果表都没有维护到规则表，但是存在config表，则走此处的逻辑
 					if (inRulesTabColList.size() == 0 && notInRulesTabColList.size() == 0) {
 						for (int i=0; i<destTableColList.size();i++){
-							args.add(dcETLHelper.resultSet.getObject( destTableColList.get(i).getColumn_name() ));
+							args.add(dcETLHelperBatch.resultSetBatch.getObject( destTableColList.get(i).getColumn_name() ));
 						}
 					}
 				}
 				
-				dcETLHelper.setMSTDataInsertParams(args);
-				dcETLHelper.addBatch();
+				dcETLHelperDest.setMSTDataInsertParams(args);
+				dcETLHelperDest.addBatch();
 				//rsCount++;
 				//LogManager.appendToLog("rsCount:" + rsCount);
 				
 				// 判断是否执行批 20000 一批
-				if (dcETLHelper.getCurrentSize() == GlobalInfo.MAX_BATCH_SIZE) {
-					returnInsertCount = returnInsertCount + dcETLHelper.getCurrentSize();
-					dcETLHelper.exeBatch(0, commitFlag);  // 暂不提交
+				if (dcETLHelperDest.getCurrentSize() == GlobalInfo.MAX_BATCH_SIZE) {
+					returnInsertCount = returnInsertCount + dcETLHelperDest.getCurrentSize();
+					dcETLHelperDest.exeBatch(0, commitFlag);  // 暂不提交
+					dcETLHelperDest.clearBatch();
 					executeBatchCnt++;
-					LogManager.appendToLog("dcETLHelper.exeBatch(" + executeBatchCnt + ") [" + destTableOwner + "." + destTableName + "] => " + 
+					LogManager.appendToLog("dcETLHelperDest.exeBatch(" + executeBatchCnt + ") [" + destTableOwner + "." + destTableName + "] => " + 
 							TypeConversionUtil.dateToString(new Date()), GlobalInfo.DEBUG_MODE);
 				}
 				
 			} // while
 			
-			if (dcETLHelper.getCurrentSize() > 0 ){
-				returnInsertCount = returnInsertCount + dcETLHelper.getCurrentSize();
-				dcETLHelper.exeBatch(99, commitFlag);  // 暂不提交
+			LogManager.appendToLog(" >> end fetch resultSetBatch: while (dcETLHelperBatch.resultSetBatch.next()) <<< ", GlobalInfo.DEBUG_MODE);
+			
+			if (dcETLHelperDest.getCurrentSize() > 0 ){
+				returnInsertCount = returnInsertCount + dcETLHelperDest.getCurrentSize();
+				dcETLHelperDest.exeBatch(99, commitFlag);  // 暂不提交
 			}
 			
+			LogManager.appendToLog("executeSqlSummary:" + this.logExecuteSqlSummary, GlobalInfo.STATEMENT_MODE);
 			LogManager.appendToLog("returnInsertCount:" + returnInsertCount);
 			
 		} catch (Exception e) {
+			dcETLHelperDest.rollback();  // 回滚未提交的事务
 			e.printStackTrace();
-			LogManager.appendToLog("insertDataBySelectRsBatch() [" + destTableOwner + "."+ destTableName + 
-					"] => Exception: " + e.toString() + ", 错误时正在执行的SQL:" + dcETLHelper.getCurrentErrorSql(), 
-					GlobalInfo.EXCEPTION_MODE);
-			throw e;
+			String currentErrorMsg = " *** insertDataBySelectRsBatch() [" + destTableOwner + "."+ destTableName + 
+						"] => Exception: " + e.toString() + ", 错误时正在执行的SQL:[" + dcETLHelperDest.getCurrentErrorSql() + 
+						"] => [" + dcETLHelperBatch.getCurrentErrorSql() + "]";
+					
+			LogManager.appendToLog(currentErrorMsg, GlobalInfo.EXCEPTION_MODE);
+			throw new RuntimeException(currentErrorMsg);
 		} finally {
-			dcETLHelper.close();
+			dcETLHelperDest.clearBatch();
+			dcETLHelperDest.closeAll();
+			//大记录集连接对象关闭
+			dcETLHelperBatch.closeAll();
 		}
 		
 		LogManager.appendToLog("Leaving insertDataBySelectRsBatch() ---> ");
@@ -656,7 +901,17 @@ public class DataPurgeETL {
 		return returnInsertCount;
 	}
 	
-	// 数据清理主程序
+	/**********************************
+	 * 数据清理主程序
+	 * 
+	 * @param ifaceParameter
+	 * @param actionFlag
+	 * @return
+	 * @throws ClassNotFoundException
+	 * @throws SQLException
+	 * @throws IOException
+	 * @throws ParseException
+	 **********************************/
 	public IfaceReturns startDataPurgeEngine(IfaceParameters ifaceParameter,
 											 String actionFlag) 
             throws ClassNotFoundException, SQLException, IOException, ParseException {
@@ -691,13 +946,21 @@ public class DataPurgeETL {
 			}*/
 		}
 		
+		//
+		//初始化分库分表数据库连接信息实体
+		DcSysDbConnMapping sysDbConnMapping = null;
+		StringBuffer logFileContents = new StringBuffer("");
+		
+		
 		for (QueryDPInstanceConfigsRsEO rs : dpTabList) {
 			
 			LogManager.appendToLog("======================================================", 
 					GlobalInfo.STATEMENT_MODE);
 			
+			logFileContents.delete(0, logFileContents.length());  // clean 日志信息
 			List<Object> args = new ArrayList<Object>();
 			String sourceDpTableName = rs.getSource_dp_table_name();  // 清洗的源表
+			String concurrentProcessingId = null;  // 并发控制表ID
 			
 			LogManager.appendToLog("Start process data purge: [" + rs.getSource_dp_table_owner() + "." + 
 					sourceDpTableName + "] --- ");
@@ -714,13 +977,16 @@ public class DataPurgeETL {
 			String startDpDate = TypeConversionUtil.dateToString( new Date() );
 			LogManager.appendToLog("  (1)->Run time [startDpDate:" + startDpDate + "]");
 			
+			//===========================
 			// 0. 检查当前清洗的表是否存在启用的规则 但 未验证通过
-			if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE) && 
-					!checkIsValidDpRules(rs.getSource_sys_key(),
-					                 rs.getSource_dp_table_owner(),
-					                 sourceDpTableName,
-					                 rs.getDest_dp_table_owner(),
-					                 rs.getDest_dp_table_name())) {
+			//===========================
+			boolean isValidDpRulesFlag = checkIsValidDpRules(rs.getSource_sys_key(),
+	                 										 rs.getSource_dp_table_owner(),
+	                 										 sourceDpTableName,
+	                 										 rs.getDest_dp_table_owner(),
+	                 										 rs.getDest_dp_table_name());
+			logFileContents.append("isValidDpRulesFlag:[" + isValidDpRulesFlag + "]~");
+			if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE) && !isValidDpRulesFlag) {
 				ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
 				ifaceReturn.setReturnMsg("数据清洗规则维护的来源" + rs.getSource_sys_key() + "表 " + 
 										 rs.getSource_dp_table_owner() + "." + 
@@ -742,8 +1008,8 @@ public class DataPurgeETL {
 				args.add(TypeConversionUtil.dateToString( new Date() ));
 				args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
 				args.add(ifaceReturn.getReturnMsg());  // process_message
-				args.add("");
-				args.add("");  // log_file
+				args.add(dcETLHelper.getCurrentErrorSql());
+				args.add(logFileContents.toString());  // log_file
 				args.add(null);
 				args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 				args.add(ifaceParameter.getSourceTabOwner());
@@ -759,8 +1025,9 @@ public class DataPurgeETL {
 				continue;  // 继续下一个表的处理
 			}
 			
+			//===========================
 			// 并发控制
-			String concurrentProcessingId = null;
+			//===========================
 			if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
 				concurrentProcessingId = 
 						new ConcurrentControlManager(rs.getSource_sys_key(),
@@ -768,6 +1035,7 @@ public class DataPurgeETL {
 								sourceDpTableName,
 								rs.getDest_dp_table_owner(),
 								rs.getDest_dp_table_name()).isConcurrentDpProcessing();
+				logFileContents.append("concurrentProcessingId:[" + concurrentProcessingId + "]~");
 				if (concurrentProcessingId == null) {
 					ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
 					ifaceReturn.setReturnMsg("数据清洗来源" + rs.getSource_sys_key() + "表 " + 
@@ -791,7 +1059,7 @@ public class DataPurgeETL {
 					args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
 					args.add(ifaceReturn.getReturnMsg());  // process_message
 					args.add("");
-					args.add("");  // log_file
+					args.add(logFileContents.toString());  // log_file
 					args.add(null);
 					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 					args.add(ifaceParameter.getSourceTabOwner());
@@ -814,35 +1082,166 @@ public class DataPurgeETL {
 				initDataImpFlag = true;
 			}
 			
+			//===========================
 			// 1. 获取维护了规则的表列信息（包括规则列表中的列 & 非规则列表维护的列）
+			//===========================
 			List<QuerySourceTabColRsEO> inRulesTabColList = 
 					getDataPurgeTabColumnLists(ifaceParameter.getSourceSysKey(),
 						 					   rs.getSource_dp_table_owner(), 
 						 					   sourceDpTableName,
 						 					   actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE) ? "Y" : "N",  // Modified by chao.tang@2016-07-06 for 解决验证和数据清洗的条件过来bug
 						 					   true);
+			String getInRulesTabColSqlText = dcETLHelper.getCurrentErrorSql();  // 获取执行的sql
 			List<QuerySourceTabColRsEO> notInRulesTabColList = 
 					getDataPurgeTabColumnLists(ifaceParameter.getSourceSysKey(),
 						 					   rs.getSource_dp_table_owner(), 
 						 					   sourceDpTableName,
 						 					   actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE) ? "Y" : "N",  // Modified by chao.tang@2016-07-06 for 解决验证和数据清洗的条件过来bug
 						 					   false);
-			LogManager.appendToLog("  inRulesTabColList.size => " + inRulesTabColList.size());
-			LogManager.appendToLog("  notInRulesTabColList.size => " + notInRulesTabColList.size());
+			String getNotInRulesTabColSqlText = dcETLHelper.getCurrentErrorSql();  // 获取执行的sql
+			if (inRulesTabColList.size() > 0) {
+				logFileContents.append("inRulesTabColList.getDp_rules_header_id:[" + inRulesTabColList.get(0).getDp_rules_header_id() + "]~");
+			} else if (notInRulesTabColList.size() > 0) {
+				logFileContents.append("notInRulesTabColList.getDp_rules_header_id:[" + notInRulesTabColList.get(0).getDp_rules_header_id() + "]~");
+			}
+			logFileContents.append("inRulesTabColList.size:[" + inRulesTabColList.size() + "]~");
+			logFileContents.append("notInRulesTabColList.size:[" + notInRulesTabColList.size() + "]~");
 			
+			LogManager.appendToLog("  inRulesTabColList.size => " + inRulesTabColList.size() + GlobalInfo.LINE_SEPARATOR + getInRulesTabColSqlText);
+			LogManager.appendToLog("  notInRulesTabColList.size => " + notInRulesTabColList.size() + GlobalInfo.LINE_SEPARATOR + getNotInRulesTabColSqlText);
+			
+			//获取规则头ID
+			if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+				String dpRulesHeaderId = getDpRulesHeaderId(ifaceParameter.getSourceSysKey(),
+						   									rs.getSource_dp_table_owner(), 
+						   									sourceDpTableName);
+				logFileContents.append("dpRulesHeaderId:[" + dpRulesHeaderId + "]~");
+				logFileContents.append("rs.getDp_rules_header_id():[" + rs.getDp_rules_header_id() + "]");
+				
+				if ( (dpRulesHeaderId != null && !"".equals(dpRulesHeaderId)) || (rs.getDp_rules_header_id() != null && !"".equals(rs.getDp_rules_header_id())) ) {
+					boolean raiseRulesErrFlag = false;
+					if (inRulesTabColList.size() == 0 || notInRulesTabColList.size() == 0) {
+						raiseRulesErrFlag = true;
+					}
+					if ( (dpRulesHeaderId == null && rs.getDp_rules_header_id() != null) || 
+						 (dpRulesHeaderId != null && rs.getDp_rules_header_id() == null) ||
+						 (dpRulesHeaderId != null && rs.getDp_rules_header_id() != null && !dpRulesHeaderId.equals(rs.getDp_rules_header_id())) ) {
+						raiseRulesErrFlag = true;
+					}
+					//单独获取规则能获取到，再次判断规则是否和上述获取到的规则列一致?
+					if (raiseRulesErrFlag) {
+						ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
+						ifaceReturn.setReturnMsg("dpRulesHeaderId:[" + dpRulesHeaderId + "]~ rs.getDp_rules_header_id():[" + rs.getDp_rules_header_id() + "]~ But " + 
+												 rs.getSource_dp_table_owner() + "." + sourceDpTableName + 
+								                 " cannot find any valid columns, please check and retry again" + "; " + ifaceReturn.getReturnMsg());
+						
+						// Log for debug
+						printDebugStackInfo(rs.getSource_sys_key(),
+					 			rs.getSource_dp_table_owner(),
+					 			sourceDpTableName,
+					 			rs.getDest_dp_table_owner(),
+					 			rs.getDest_dp_table_name(),
+					 			rs.getDp_rules_header_id());
+						
+						// 插入错误日志
+						if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+							args.clear();
+							args.add(GeneratorUUID.generateUUID());
+							args.add(actionFlag);
+							args.add(ifaceParameter.getSourceSysKey());
+							args.add(rs.getSource_dp_table_owner());
+							args.add(sourceDpTableName);
+							args.add(rs.getDest_dp_table_owner());
+							args.add(rs.getDest_dp_table_name());
+							args.add(startDpDate);
+							args.add(TypeConversionUtil.dateToString( new Date() ));
+							args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
+							args.add(ifaceReturn.getReturnMsg());  // process_message
+							args.add(dcETLHelper.getCurrentErrorSql() + " *** " + getInRulesTabColSqlText + " *** " + getNotInRulesTabColSqlText);
+							args.add(logFileContents.toString());  // log_file
+							args.add(null);
+							args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
+							args.add(ifaceParameter.getSourceTabOwner());
+							args.add(ifaceParameter.getSourceTabName());
+							args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpStartDate()));
+							args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpEndDate()));
+							args.add(null);  // process_row_count
+							
+							// 采用异步线程的方式插入
+							if (insertDpInstanceLog(dcETLHelper, args)) {
+							}
+						}
+						
+						// 并发控制
+						if (concurrentProcessingId != null) {
+						  new ConcurrentControlManager(concurrentProcessingId, GlobalInfo.CONCURRENT_PENDING_STS).start();
+						}
+						
+						continue;
+					}
+				}
+			}
+			
+			//===========================
 			// 2. 获取目标表的所有列
+			//===========================
 			List<QueryTabColumnsRsEO> destTableColList = 
 					getDataPurgeTabColumnListsOf(rs.getDest_dp_table_owner(), 
 						 					     rs.getDest_dp_table_name());
 			LogManager.appendToLog("  destTableColList.size => " + destTableColList.size());
+			if (destTableColList.size() == 0) {
+				ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
+				ifaceReturn.setReturnMsg(rs.getDest_dp_table_owner() + "." + rs.getDest_dp_table_name() + 
+						                 " cannot find any valid columns, please check and retry again" + "; " + ifaceReturn.getReturnMsg());
+				
+				// 插入错误日志
+				if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+					args.clear();
+					args.add(GeneratorUUID.generateUUID());
+					args.add(actionFlag);
+					args.add(ifaceParameter.getSourceSysKey());
+					args.add(rs.getSource_dp_table_owner());
+					args.add(sourceDpTableName);
+					args.add(rs.getDest_dp_table_owner());
+					args.add(rs.getDest_dp_table_name());
+					args.add(startDpDate);
+					args.add(TypeConversionUtil.dateToString( new Date() ));
+					args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
+					args.add(ifaceReturn.getReturnMsg());  // process_message
+					args.add(dcETLHelper.getCurrentErrorSql());
+					args.add(logFileContents.toString());  // log_file
+					args.add(null);
+					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
+					args.add(ifaceParameter.getSourceTabOwner());
+					args.add(ifaceParameter.getSourceTabName());
+					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpStartDate()));
+					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpEndDate()));
+					args.add(null);  // process_row_count
+					
+					// 采用异步线程的方式插入
+					if (insertDpInstanceLog(dcETLHelper, args)) {
+					}
+				}
+				
+				// 并发控制
+				if (concurrentProcessingId != null) {
+				  new ConcurrentControlManager(concurrentProcessingId, GlobalInfo.CONCURRENT_PENDING_STS).start();
+				}
+				
+				continue;
+			}
 			
+			//===========================
 			// 3. 获取目标表的主键列
+			//===========================
 			List<Object> destTabUniqueConstraintColList = getTabUniqueConstraintCol(rs.getDest_dp_table_owner(), 
 				     													            rs.getDest_dp_table_name());
 			LogManager.appendToLog("  destTabUniqueConstraintColList.size => " + 
 				     						destTabUniqueConstraintColList.size());
 			
+			//===========================
 			// 4. 存放 SQL拼接结果
+			//===========================
 			StringBuffer selectFromColumnList = new StringBuffer("");
 			StringBuffer insertIntoColumnList = new StringBuffer("");
 			StringBuffer onDuplicateKeyUptList = new StringBuffer(""); 
@@ -883,9 +1282,8 @@ public class DataPurgeETL {
 					} // for i 
 				} else {
 					ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
-					ifaceReturn.setReturnMsg(rs.getSource_dp_table_owner() + "." + 
-							                 sourceDpTableName + 
-							                 " cannot find any valid columns" + "; " + 
+					ifaceReturn.setReturnMsg(rs.getSource_dp_table_owner() + "." + sourceDpTableName + 
+							                 " cannot find any valid columns, please check and retry again" + "; " + 
 							                 ifaceReturn.getReturnMsg());
 					
 					// 插入错误日志
@@ -903,7 +1301,7 @@ public class DataPurgeETL {
 						args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
 						args.add(ifaceReturn.getReturnMsg());  // process_message
 						args.add("");
-						args.add("");  // log_file
+						args.add(logFileContents.toString());  // log_file
 						args.add(null);
 						args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 						args.add(ifaceParameter.getSourceTabOwner());
@@ -1059,7 +1457,9 @@ public class DataPurgeETL {
 			
 			
 			//*************************************************
+			//===========================
 			// 5. 进行sql拼接
+			//===========================
 			LogManager.appendToLog("  insertIntoColumnList: " + insertIntoColumnList.toString(), GlobalInfo.STATEMENT_MODE);
 			LogManager.appendToLog("  selectFromColumnList: " + selectFromColumnList.toString(), GlobalInfo.STATEMENT_MODE);
 			LogManager.appendToLog("  onDuplicateKeyUptList: " + onDuplicateKeyUptList.toString(), GlobalInfo.STATEMENT_MODE);
@@ -1083,7 +1483,7 @@ public class DataPurgeETL {
 					args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
 					args.add(ifaceReturn.getReturnMsg());  // process_message
 					args.add("");
-					args.add("");  // log_file
+					args.add(logFileContents.toString());  // log_file
 					args.add(null);
 					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 					args.add(ifaceParameter.getSourceTabOwner());
@@ -1106,37 +1506,99 @@ public class DataPurgeETL {
 			}
 			
 			// not exists 替换为 left join的方式，提高效率
-			if (inRulesTabColList.size() == 0) {
-				leftJoinClause = " LEFT JOIN " + destTabOwner + "." + destTabName + " " + 
-						GlobalInfo.DEST_TAB_ALIAS_NAME + " ON (";
-				
-				String connectWhereTemp = null;
-				for (int i=0; i<destTabUniqueConstraintColList.size(); i++) {
-					if (connectWhereTemp != null && !"".equals(connectWhereTemp)) {
-						//notExistsSql = notExistsSql + " and " + GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
-						//		" IS NULL ";
-						connectWhereTemp = connectWhereTemp + " and " + 
-								GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
-								"=" + 
-								GlobalInfo.SOUR_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString();
-					} else {
-						notExistsSql = GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
-								" IS NULL ";
-						connectWhereTemp = GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
-								"=" + 
-								GlobalInfo.SOUR_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString();
+			// Fix bug for 外链接，增加if判断逻辑，数据清洗时不采用外链接的方式进行数据过滤
+			if (!actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+				if (inRulesTabColList.size() == 0) {
+					leftJoinClause = " LEFT JOIN " + destTabOwner + "." + destTabName + " " + 
+							GlobalInfo.DEST_TAB_ALIAS_NAME + " ON (";
+					
+					String connectWhereTemp = null;
+					for (int i=0; i<destTabUniqueConstraintColList.size(); i++) {
+						if (connectWhereTemp != null && !"".equals(connectWhereTemp)) {
+							//notExistsSql = notExistsSql + " and " + GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
+							//		" IS NULL ";
+							connectWhereTemp = connectWhereTemp + " and " + 
+									GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
+									"=" + 
+									GlobalInfo.SOUR_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString();
+						} else {
+							notExistsSql = GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
+									" IS NULL ";
+							connectWhereTemp = GlobalInfo.DEST_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString() + 
+									"=" + 
+									GlobalInfo.SOUR_TAB_ALIAS_NAME + "." + destTabUniqueConstraintColList.get(i).toString();
+						}
+					} // for
+					if (connectWhereTemp == null) {
+						connectWhereTemp = "1=1";
 					}
-				} // for
-				if (connectWhereTemp == null) {
-					connectWhereTemp = "1=1";
+					
+					leftJoinClause = leftJoinClause + connectWhereTemp + ") ";
 				}
-				
-				leftJoinClause = leftJoinClause + connectWhereTemp + ") ";
 			}
 			
 			//leftJoinClause = "";  /// ?????????????
 			
+			
+			//===========================
+			// 分库分表逻辑，根据source_sys_key获取数据库连接
+			//===========================
+			try {
+				if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+					sysDbConnMapping = DbConnMappingUtil.initDbConnMapping(dcETLHelper, rs.getSource_sys_key());
+					logFileContents.append("sysDbConnMapping.getDb_schema():[" + sysDbConnMapping.getDb_schema() + "]~");
+				}
+			} catch (Exception e) {
+				//e.printStackTrace();
+				LogManager.appendToLog("DataPurgeETL --> DbConnMappingUtil.initDbConnMapping() Exception:" + e.toString(),
+						GlobalInfo.EXCEPTION_MODE);
+				//
+				ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
+				ifaceReturn.setReturnMsg("未找到source_sys_key=" + rs.getSource_sys_key() + " 目标数据库的连接配置信息，请检查表dc_sys_db_conn_mapping的配置. " + 
+						"; " + ifaceReturn.getReturnMsg());
+				
+				// 插入错误日志
+				if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
+					args.clear();
+					args.add(GeneratorUUID.generateUUID());
+					args.add(actionFlag);
+					args.add(ifaceParameter.getSourceSysKey());
+					args.add(rs.getSource_dp_table_owner());
+					args.add(sourceDpTableName);
+					args.add(rs.getDest_dp_table_owner());
+					args.add(rs.getDest_dp_table_name());
+					args.add(startDpDate);
+					args.add(TypeConversionUtil.dateToString( new Date() ));
+					args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
+					args.add(ifaceReturn.getReturnMsg());  // process_message
+					args.add("");
+					args.add(logFileContents.toString());  // log_file
+					args.add(null);
+					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
+					args.add(ifaceParameter.getSourceTabOwner());
+					args.add(ifaceParameter.getSourceTabName());
+					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpStartDate()));
+					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpEndDate()));
+					args.add(null);  // process_row_count
+					
+					// 采用异步线程的方式插入
+					if (insertDpInstanceLog(dcETLHelper, args)) {
+					}
+				}
+				
+				// 并发控制
+				if (concurrentProcessingId != null) {
+				  new ConcurrentControlManager(concurrentProcessingId, GlobalInfo.CONCURRENT_PENDING_STS).start();
+				}
+				
+				// 数据库连接都不存在，直接返回
+				return ifaceReturn;
+			}
+			
+			
+			//===========================
 			// 构造各个部分的sql
+			//===========================
 			String selectSql = generateSourceQuerySql(ifaceParameter, 
 					sourTabOwner, 
 					sourFromTabName, 
@@ -1144,7 +1606,7 @@ public class DataPurgeETL {
 					sourTabWhereClause,
 					leftJoinClause);
 			String insertIntoSql = generateDestInsertSql(ifaceParameter, 
-					destTabOwner, 
+					(actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE) && sysDbConnMapping != null)?sysDbConnMapping.getDb_schema():destTabOwner,  //分库分表
 					destTabName, 
 					insertIntoColumnList.toString());
 			LogManager.appendToLog("  selectSql: " + selectSql, GlobalInfo.STATEMENT_MODE);
@@ -1243,22 +1705,48 @@ public class DataPurgeETL {
 			
 			LogManager.appendToLog("  *** fullDataPurgeSql: " + fullDataPurgeSql.toString());
 			
+			//===========================
 			// 6. 执行 数据清洗脚本 & 更新配置表的上一次数据清洗时间 + 插入数据清洗log日志表
+			//===========================
+			// 此次清洗到当前时间节点
+			Date currentSysDatetime = new java.sql.Date(new Date().getTime());  // get current sysdate
+			// Fix bug @2016-09-27 for 时间同步不一致问题 Begin
+			dcETLHelper.executeQuery(GlobalSql.QUERY_DB_NOW_DATE, null);
+			if (dcETLHelper.resultSet.next()) {
+				currentSysDatetime =  TypeConversionUtil.dateCheck(dcETLHelper.resultSet.getDate("DB_SYSDATE").toString() + " " + 
+						dcETLHelper.resultSet.getTime("DB_SYSDATE").toString());
+			}
+			// Fix bug @2016-09-27 for 时间同步不一致问题 Begin
+			
+			
+			// fix bug by chao.tang@2016-09-23 for 数据缺失 Begin
+			// 新的上一次数据清洗值，根据条件进行设置
+			Date newLastDpDatetime = getNewLastDpDatetime(rs.getLast_dp_datetime(),
+														  currentSysDatetime,
+														  ifaceParameter.getDpStartDate(),
+														  ifaceParameter.getDpEndDate());
+			// 设置取数参数
 			args.clear();
 			if (startDateFilterConditFlag) {
 				args.add(ifaceParameter.getDpStartDate());
 				args.add(rs.getLast_dp_datetime());
 				args.add(rs.getDp_tolerance_seconds());
+				LogManager.appendToLog("rs.getDp_tolerance_seconds():**********:" + rs.getDp_tolerance_seconds());
 			}
 			if (endDateFilterConditFlag) {
-				args.add(ifaceParameter.getDpEndDate());
+				if (ifaceParameter.getDpEndDate() != null) {
+					args.add(ifaceParameter.getDpEndDate());
+				} else {
+					args.add(newLastDpDatetime);
+				}
 			}
 			// set source_sys_key
 			if (dp_tab_filter_condit3_flag) {
 				args.add(ifaceParameter.getSourceSysKey());
 			}
+			// fix bug by chao.tang@2016-09-23 for 数据缺失 End
 			
-			Date currentSysDatetime = new java.sql.Date(new Date().getTime());  // get current sysdate
+			
 			boolean exceptionFlag = false;
 			int insertCount = 0;
 			
@@ -1268,24 +1756,28 @@ public class DataPurgeETL {
 				LogManager.appendToLog("    initDataImpFlag:" + initDataImpFlag, GlobalInfo.DEBUG_MODE);
 				
 				String fullDataPurgeSqlBak = fullDataPurgeSql.toString();
+				this.logExecuteSqlSummary = new String("");  // 记录完整的执行sql
 				if ( !initDataImpFlag ) {
 					// 验证保持原来的逻辑
 					dcETLHelper.setAndExecuteDML(fullDataPurgeSql.toString(), args);
+					dcETLHelper.close();
+					//
+					if (dcETLHelper.getCurrentErrorSql() != null && 
+							!"".equals(dcETLHelper.getCurrentErrorSql())) {
+						fullDataPurgeSqlBak = dcETLHelper.getCurrentErrorSql();
+					}
 				} else {
-					insertCount = insertDataBySelectRsBatch(insertIntoSql, fullDataPurgeSql.toString(), args, 
+					insertCount = insertDataBySelectRsBatch(sysDbConnMapping, insertIntoSql, fullDataPurgeSql.toString(), args, 
 							destTabOwner, destTabName, destTabUniqueConstraintColList, 
 							inRulesTabColList, 
 							notInRulesTabColList,
 							destTableColList,
 							initDataImpFlag);
+					fullDataPurgeSqlBak = this.logExecuteSqlSummary;
 					LogManager.appendToLog("  insertCount:" + insertCount, GlobalInfo.STATEMENT_MODE);
+					LogManager.appendToLog("  fullDataPurgeSqlBak:" + fullDataPurgeSqlBak, GlobalInfo.STATEMENT_MODE);
 				}
 				LogManager.appendToLog("  (2)->end execute fullDataPurgeSql ", GlobalInfo.DEBUG_MODE);
-				
-				if (dcETLHelper.getCurrentErrorSql() != null && 
-						!"".equals(dcETLHelper.getCurrentErrorSql())) {
-					fullDataPurgeSqlBak = dcETLHelper.getCurrentErrorSql();
-				}
 				
 				if (actionFlag.equals(GlobalInfo.DCETL_ENGIN_DO_PURGE)) {
 					//=============================
@@ -1293,14 +1785,8 @@ public class DataPurgeETL {
 					//=============================
 					LogManager.appendToLog("  (3)->Begin update/insert data purge instance config autoc LAST_DP_DATETIME");
 					
-					// 新的上一次数据清洗值，根据条件进行设置
-					Date newLastDpDatetime = getNewLastDpDatetime(rs.getLast_dp_datetime(),
-																  currentSysDatetime,
-																  ifaceParameter.getDpStartDate(),
-																  ifaceParameter.getDpEndDate());
 					String dateMode = GlobalInfo.OTHERS_DATE_VAL_MODE;
-					LogManager.appendToLog("  newLastDpDatetime: [" + dateMode + "]" + 
-							TypeConversionUtil.dateToString(newLastDpDatetime));
+					LogManager.appendToLog("  newLastDpDatetime: [" + dateMode + "]" + TypeConversionUtil.dateToString(newLastDpDatetime));
 					
 					args.clear();
 					args.add(GeneratorUUID.generateUUID());
@@ -1321,6 +1807,7 @@ public class DataPurgeETL {
 					//dcETLHelper.prepareSql(GlobalSql.UPDATE_DP_CONFIG_LAST_DP_DATETIME);
 					//dcETLHelper.setAndExecuteDML(args);
 					dcETLHelper.setAndExecuteDML(GlobalSql.UPDATE_DP_CONFIG_LAST_DP_DATETIME, args);
+					dcETLHelper.close();
 					LogManager.appendToLog("  (3)->End update/insert data purge instance config autoc LAST_DP_DATETIME");
 				
 					String endDpDate = TypeConversionUtil.dateToString( new Date() );
@@ -1336,7 +1823,7 @@ public class DataPurgeETL {
 					args.add(ifaceParameter.getSourceSysKey());
 					args.add(rs.getSource_dp_table_owner());
 					args.add(sourceDpTableName);
-					args.add(rs.getDest_dp_table_owner());
+					args.add(sysDbConnMapping.getDb_schema()/*rs.getDest_dp_table_owner()*/);
 					args.add(rs.getDest_dp_table_name());
 					args.add(startDpDate);
 					args.add(endDpDate);
@@ -1344,13 +1831,21 @@ public class DataPurgeETL {
 					args.add("");  // process_message
 					//args.add(fullDataPurgeSql);
 					args.add(fullDataPurgeSqlBak);
-					args.add("");  // log_file
+					args.add(logFileContents.toString());  // log_file
 					args.add(TypeConversionUtil.dateToString(newLastDpDatetime));
 					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 					args.add(ifaceParameter.getSourceTabOwner());
 					args.add(ifaceParameter.getSourceTabName());
-					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpStartDate()));
-					args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpEndDate()));
+					if (ifaceParameter.getDpStartDate() != null) {
+						args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpStartDate()));
+					} else {
+						args.add(TypeConversionUtil.dateToString(rs.getLast_dp_datetime()));
+					}
+					if (ifaceParameter.getDpEndDate() != null) {
+						args.add(TypeConversionUtil.dateToString(ifaceParameter.getDpEndDate()));
+					} else {
+						args.add(TypeConversionUtil.dateToString(currentSysDatetime));
+					}
 					args.add(insertCount);  // process_row_count
 					
 					// 采用异步线程的方式插入
@@ -1377,11 +1872,20 @@ public class DataPurgeETL {
 				LogManager.appendToLog("  (5)->rollback as SQLException");
 				exceptionFlag = true;
 				ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
-				ifaceReturn.setReturnMsg(" 错误时正在发生的SQL：" + dcETLHelper.getCurrentErrorSql() + 
-						GlobalInfo.LINE_SEPARATOR + 
-						e.toString());
+				ifaceReturn.setReturnMsg(" SQLException >> 错误时正在发生的SQL：" + dcETLHelper.getCurrentErrorSql() + 
+						GlobalInfo.LINE_SEPARATOR + e.toString());
 				e.printStackTrace();
 				LogManager.appendToLog("startDataPurgeEngine() => SQLException: " + e.toString(), 
+						GlobalInfo.EXCEPTION_MODE);
+			} catch (RuntimeException e) {
+				dcETLHelper.rollback();
+				LogManager.appendToLog("  (5)->rollback as RuntimeException");
+				exceptionFlag = true;
+				ifaceReturn.setReturnStatus(GlobalInfo.SERVICES_RET_ERROR);
+				ifaceReturn.setReturnMsg(" RuntimeException >> 错误时正在发生的SQL：" + dcETLHelper.getCurrentErrorSql() + 
+						GlobalInfo.LINE_SEPARATOR + e.toString());
+				e.printStackTrace();
+				LogManager.appendToLog("startDataPurgeEngine() => RuntimeException: " + e.toString(), 
 						GlobalInfo.EXCEPTION_MODE);
 			} catch (Exception e) {
 				dcETLHelper.rollback();
@@ -1409,7 +1913,7 @@ public class DataPurgeETL {
 					args.add(GlobalInfo.SERVICES_RET_ERROR);  //process_status
 					args.add(ifaceReturn.getReturnMsg());  // process_message
 					args.add("");
-					args.add("");  // log_file
+					args.add(logFileContents.toString());  // log_file
 					args.add(null);
 					args.add(ifaceParameter.getSourceSysKey());  // dp_parameter1..5
 					args.add(ifaceParameter.getSourceTabOwner());

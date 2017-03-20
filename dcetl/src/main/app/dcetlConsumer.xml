@@ -14,13 +14,13 @@ http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/
     <!-- Need add xmlns:context="http://www.springframework.org/schema/context" -->
     <context:property-placeholder location="classpath:smtp_email.properties"></context:property-placeholder>
     
-    <jms:activemq-connector name="Active_MQ" username="${ACTIVEMQ_USERNAME}" password="${ACTIVEMQ_PASSWORD}" brokerURL="${ACTIVEMQ_BROKERURL}" validateConnections="true" doc:name="Active MQ" numberOfConsumers="1">
+    <jms:activemq-connector name="Active_MQ" username="${MQ_ENV_USERNAME}" password="${MQ_ENV_PASSWORD}" brokerURL="${MQ_ENV_BROKERURL}" validateConnections="true" doc:name="Active MQ" numberOfConsumers="1">
         <reconnect frequency="60000" count="5"/>
     </jms:activemq-connector>
     <custom-filter class="filter.MqMessageFilter" name="CustomConsumerFilter" doc:name="Custom"/>
     
     <flow name="dcetlConsumerFlow">
-        <jms:inbound-endpoint  queue="${ACTIVEMQ_QUEUE_NAME}" connector-ref="Active_MQ" doc:name="JMS" >
+        <jms:inbound-endpoint  queue="${MQ_ENV_DC2DCETL_QNAME}" connector-ref="Active_MQ" doc:name="JMS" >
         </jms:inbound-endpoint>
         <component class="component.ProcessFlowInit" doc:name="Consumer[initTaskTabList&amp;Lock]"/>
         <expression-filter expression="#[payload.size()&gt;0]" doc:name="Payload is not null"/>
@@ -30,7 +30,7 @@ http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/
             <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
             <component class="component.PostDataPurge" doc:name="updateStatus&amp;TransferToLog"/>
             <filter ref="CustomConsumerFilter" doc:name="Filter (message is not null)"/>
-            <component class="component.RmsCalSender" doc:name="Send to RMSCal"/>
+            <component class="component.RmsCalSender" doc:name="Send to RMS&amp;DW"/>
         </async>
         <catch-exception-strategy doc:name="Catch Exception Strategy">
             <set-payload value="Dcetl program @Consumer @@#[server.dateTime.format(&quot;yyyy.MM.dd  HH:mm:ss&quot;)] run exception: #[exception.getDetailedMessage()]" doc:name="Set Exception Info"/>

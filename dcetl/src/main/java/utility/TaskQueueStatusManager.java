@@ -18,10 +18,12 @@ public class TaskQueueStatusManager {
 	private String process_message;
 	private String start_process_datetime_flag;
 	private String end_process_datetime_flag;
+	private String retry_times_flag;
 	
 	public TaskQueueStatusManager(DBHelper dcETLHelper, String task_queue_id, String source_sys_key,
 			String task_type_code, String process_group_id, String status_code, String process_message,
-			String start_process_datetime_flag, String end_process_datetime_flag) {
+			String start_process_datetime_flag, String end_process_datetime_flag, 
+			String retry_times_flag) {
 		super();
 		this.dcETLHelper = dcETLHelper;  // 数据库连接串
 		this.task_queue_id = task_queue_id;
@@ -32,6 +34,7 @@ public class TaskQueueStatusManager {
 		this.process_message = process_message;
 		this.start_process_datetime_flag = start_process_datetime_flag;
 		this.end_process_datetime_flag = end_process_datetime_flag;
+		this.retry_times_flag = retry_times_flag;
 	}
 	
 	// 更新任务表记录
@@ -46,14 +49,16 @@ public class TaskQueueStatusManager {
 			}
 			statusArgs.add(this.start_process_datetime_flag);  //start_process_datetime
 			statusArgs.add(this.end_process_datetime_flag);  //end_process_datetime
+			statusArgs.add(this.retry_times_flag);  //retry_times_flag
 			statusArgs.add(this.task_queue_id);  //task_queue_id
-			statusArgs.add(this.task_type_code);// task_type_code
+			statusArgs.add(this.task_type_code);  //task_type_code
 			statusArgs.add(this.source_sys_key);  //source_sys_key
-			statusArgs.add(this.process_group_id);// process_group_id
+			statusArgs.add(this.process_group_id);  //process_group_id
 			
 			// 执行状态更新
 			dcETLHelper.setAndExecuteDML(GlobalSql.UPDATE_DP_TASK_QUEUES_STATUS, statusArgs);
 			dcETLHelper.commit();
+			dcETLHelper.close();
 			statusArgs.clear();	
 		}
 	}

@@ -45,12 +45,14 @@ public class IfaceParameters {
 			this.dpStartDate = TypeConversionUtil.dateCheck(pDpStartDate);
 		} catch (ParseException e) {
 			// TODO Auto-generated catch block
+			this.dpStartDate = null;
 			e.printStackTrace();
 		}
 		try {
 			this.dpEndDate = TypeConversionUtil.dateCheck(pDpEndDate);
 		} catch (ParseException e) {
 			// TODO Auto-generated catch block
+			this.dpEndDate = null;
 			e.printStackTrace();
 		}
 		this.initialDataImpFlag = pInitialDataImpFlag;

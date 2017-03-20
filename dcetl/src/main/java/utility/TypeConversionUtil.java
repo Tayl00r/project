@@ -3,6 +3,7 @@ package utility;
 //import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -96,4 +97,15 @@ public class TypeConversionUtil {
 		}
 	}
 	
+	// remove the String[] args
+	public static String[] getRemove(String[] src) {
+		String[] temp = {};
+		ArrayList<String> list = new ArrayList<String>();
+		for (int i = 0; i < src.length; i++) {
+			list.add(src[i]);
+		}
+		list.remove(3);
+		temp = list.toArray(temp);
+		return temp;
+	}
 }

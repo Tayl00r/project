@@ -2,6 +2,7 @@ package entity;
 
 public class QuerySourceTabColRsEO {
 	
+	private String dp_rules_header_id;  // Added by chao.tang@2017-02-10 for 日志分析
 	private String source_sys_key;
 	private String source_table_owner;
 	private String source_table_name;
@@ -17,7 +18,8 @@ public class QuerySourceTabColRsEO {
     public QuerySourceTabColRsEO() {
     }
     
-	public QuerySourceTabColRsEO(String source_sys_key,
+	public QuerySourceTabColRsEO(String dp_rules_header_id,
+			                     String source_sys_key,
 								 String source_table_owner, 
 								 String source_table_name,
 								 String dest_table_owner, 
@@ -29,6 +31,7 @@ public class QuerySourceTabColRsEO {
 								 String dest_tab_column_name, 
 								 String column_name) {
 		super();
+		this.dp_rules_header_id = dp_rules_header_id;
 		this.source_sys_key = source_sys_key;
 		this.source_table_owner = source_table_owner;
 		this.source_table_name = source_table_name;
@@ -42,6 +45,14 @@ public class QuerySourceTabColRsEO {
 		this.column_name = column_name;
 	}
 	
+	public String getDp_rules_header_id() {
+		return dp_rules_header_id;
+	}
+
+	public void setDp_rules_header_id(String dp_rules_header_id) {
+		this.dp_rules_header_id = dp_rules_header_id;
+	}
+
 	public String getSource_sys_key() {
 		return source_sys_key;
 	}
@@ -107,6 +118,17 @@ public class QuerySourceTabColRsEO {
 	}
 	public void setColumn_name(String column_name) {
 		this.column_name = column_name;
+	}
+
+	@Override
+	public String toString() {
+		return "QuerySourceTabColRsEO [dp_rules_header_id=" + dp_rules_header_id + ", source_sys_key=" + source_sys_key
+				+ ", source_table_owner=" + source_table_owner + ", source_table_name=" + source_table_name
+				+ ", dest_table_owner=" + dest_table_owner + ", dest_table_name=" + dest_table_name
+				+ ", from_condition_tab_list=" + from_condition_tab_list + ", where_condition_sql="
+				+ where_condition_sql + ", source_tab_column_name=" + source_tab_column_name + ", dp_return_column_val="
+				+ dp_return_column_val + ", dest_tab_column_name=" + dest_tab_column_name + ", column_name="
+				+ column_name + "]";
 	} 
 	
 }

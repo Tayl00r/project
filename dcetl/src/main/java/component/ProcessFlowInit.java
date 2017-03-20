@@ -13,13 +13,16 @@ import org.mule.api.MuleMessage;
 import org.mule.api.lifecycle.Callable;
 
 import utility.DBHelper;
+import utility.DbConnMappingUtil;
 import utility.LogManager;
+import utility.SystemHelper;
 import utility.TaskQueueStatusManager;
 import utility.TypeConversionUtil;
 import config.GlobalInfo;
 import config.GlobalSql;
 import entity.DcProcessTaskQueueDetails;
 import entity.DcProcessTaskQueues;
+import entity.DcSysDbConnMapping;
 
 public class ProcessFlowInit implements Callable {
     
@@ -39,7 +42,7 @@ public class ProcessFlowInit implements Callable {
 		}
 	}
 	
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings({ "unchecked", "unused" })
 	public Object onCall(MuleEventContext eventContext) throws Exception {
 		// TODO Auto-generated method stub
 		
@@ -107,7 +110,24 @@ public class ProcessFlowInit implements Callable {
 				if (dcProcessTaskQueuesList.size() == 0) {
 					dcProcessTaskQueues.setStatus_code(GlobalInfo.DC_QUEUES_ERROR_STS);
 					dcProcessTaskQueues.setProcess_message("ProcessFlowInit.onCall()-->未找到满足条件需要清洗的表，可能原因: 请维护快码[" + GlobalInfo.LOOKUP_TYPE_DCETL_SOUR_SYS_KEY + 
-						"]对应的来源[" + dcProcessTaskQueues.getSource_sys_key() + "]中的快码值[表清单].");
+						"]对应的来源[" + dcProcessTaskQueues.getSource_sys_key() + "]中的快码值[表清单] 或 表dc_process_task_queue_details未包含任何记录，请检查. " + 
+						"***当前执行检查的SQL: " + dcETLHelper.getCurrentErrorSql());
+				} else {
+					//========================================
+					//初始化分库分表数据库连接信息实体
+					try {
+						DcSysDbConnMapping connMapping = DbConnMappingUtil.initDbConnMapping(dcETLHelper, dcProcessTaskQueues.getSource_sys_key());
+					} catch (Exception e) {
+						//e.printStackTrace();
+						LogManager.appendToLog("ProcessFlowInit.onCall() => InitSysDbConnMapping ---> Exception:" + e.toString(),
+								GlobalInfo.EXCEPTION_MODE);
+						//
+						dcProcessTaskQueues.setStatus_code(GlobalInfo.DC_QUEUES_ERROR_STS);
+						dcProcessTaskQueues.setProcess_message("ProcessFlowInit.onCall()-->未找到source_sys_key=" + dcProcessTaskQueues.getSource_sys_key() + 
+								" 目标数据库的连接配置信息，请检查表dc_sys_db_conn_mapping的配置. " + 
+								"***当前执行检查的SQL: " + dcETLHelper.getCurrentErrorSql());
+					}
+					//========================================
 				}
 				
 			} catch (Exception e) {
@@ -119,19 +139,34 @@ public class ProcessFlowInit implements Callable {
 						GlobalInfo.EXCEPTION_MODE);
 			} finally {
 				// 由于表已锁住，更新处理状态为error
-				try {
-					new TaskQueueStatusManager(dcETLHelper, 
-			                   dcProcessTaskQueues.getTask_queue_id(),  //task_queue_id
-			                   dcProcessTaskQueues.getSource_sys_key(),  //source_sys_key
-			                   GlobalInfo.DC_QUEUES_TASK_TYPE,  //task_type_code
-			                   dcProcessTaskQueues.getProcess_group_id(),  //process_group_id
-			                   dcProcessTaskQueues.getStatus_code(),  //status_code
-			                   dcProcessTaskQueues.getProcess_message(),  //process_message
-			                   "N",  //start_process_datetime
-							   "Y"  //end_process_datetime
-			                   ).updateTaskQueueStatus();
-				} catch (Exception e) {
-					e.printStackTrace();
+				if (dcProcessTaskQueues != null && dcProcessTaskQueues.getStatus_code() != null && 
+						GlobalInfo.DC_QUEUES_ERROR_STS.equals(dcProcessTaskQueues.getStatus_code())) {
+					String currentStatusCode = dcProcessTaskQueues.getStatus_code();
+					if (dcProcessTaskQueues.getRetry_times() < GlobalInfo.MAX_ACHIVE_TASK_RETRY_TIMES) {
+						currentStatusCode = GlobalInfo.DC_QUEUES_PENDING_STS;  //尝试次数小于3次，状态置为PENDING
+					}
+					try {
+						new TaskQueueStatusManager(dcETLHelper, 
+				                   dcProcessTaskQueues.getTask_queue_id(),  //task_queue_id
+				                   dcProcessTaskQueues.getSource_sys_key(),  //source_sys_key
+				                   GlobalInfo.DC_QUEUES_TASK_TYPE,  //task_type_code
+				                   dcProcessTaskQueues.getProcess_group_id(),  //process_group_id
+				                   currentStatusCode,  //status_code
+				                   dcProcessTaskQueues.getRetry_times() + ":" + dcProcessTaskQueues.getProcess_message(),  //process_message
+				                   "N",  //start_process_datetime
+								   "Y",  //end_process_datetime
+								   "Y"  //retry_times_flag
+				                   ).updateTaskQueueStatus();
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+					
+					// 添加node节点监控 (避免queues没有对应的details，造成监控失败)
+					if ("Y".equals(GlobalInfo.ENABLE_ACTIVITY_NODE_FLAG)) {
+						SystemHelper.updateNodes(dcProcessTaskQueues.getActive_node_id(), 1 ,null);
+						LogManager.appendToLog("ProcessFlowInit.updateActivityNodes() =====>   【 " + GlobalInfo.DC_QUEUES_SUCCESS_STS +" 】");
+					}
+					
 				}
 				//关闭数据库连接
 				release();
@@ -150,6 +185,15 @@ public class ProcessFlowInit implements Callable {
 		LogManager.appendToLog("  sourceSysKeyList.size() = " + dcProcessTaskQueuesList.size() );
 		LogManager.appendToLog("Leaving ProcessFlowInit.onCall() ---> ");
 		
+		// 判断是否抛出异常，邮件通知 Added by chao.tang@2016-10-11 14:14:14 Begin
+		if (dcProcessTaskQueues != null && dcProcessTaskQueues.getStatus_code() != null && 
+				GlobalInfo.DC_QUEUES_ERROR_STS.equals(dcProcessTaskQueues.getStatus_code()) && 
+				dcProcessTaskQueues.getRetry_times() >= GlobalInfo.MAX_ACHIVE_TASK_RETRY_TIMES ) {
+			SystemHelper.updateNodes(dcProcessTaskQueues.getActive_node_id(), 2 , GlobalInfo.DB_DCETL_URL + GlobalInfo.LINE_SEPARATOR + dcProcessTaskQueues.getProcess_message());
+			LogManager.appendToLog("ProcessFlowInit.updateActivityNodes() =====>   【 " + GlobalInfo.DB_DCETL_URL + GlobalInfo.LINE_SEPARATOR + dcProcessTaskQueues.getProcess_message() +" 】");
+			throw new RuntimeException(GlobalInfo.DB_DCETL_URL + GlobalInfo.LINE_SEPARATOR + dcProcessTaskQueues.getProcess_message());
+		}
+		
 		return muleMsg;
 	}
 	
@@ -162,9 +206,12 @@ public class ProcessFlowInit implements Callable {
 		boolean flag = false;  //返回值
 		
 		String[] args = null;
+		String parentNodeId = null;
 		if (mqMessage != null && !"".equals(mqMessage)) {
 			// 监听到消息，走MQ的逻辑
-			args = mqMessage.split("\\:");
+			String[] argsSource = mqMessage.split("\\:");
+			args = TypeConversionUtil.getRemove(argsSource);
+			parentNodeId = mqMessage.split("\\:")[3];
 		} else {
 			//主动扫表的逻辑
 			args = new String[]{null, null, null};
@@ -185,6 +232,7 @@ public class ProcessFlowInit implements Callable {
 				dcProcessTaskQueues.setStatus_code(dcETLHelper.resultSet.getString("status_code"));
 				dcProcessTaskQueues.setProcess_message(null);
 				dcProcessTaskQueues.setSource_ref_doc_id(dcETLHelper.resultSet.getString("source_ref_doc_id"));
+				dcProcessTaskQueues.setRetry_times(dcETLHelper.resultSet.getInt("retry_times"));
 			}
 			
 		} catch (Exception e) {
@@ -198,6 +246,13 @@ public class ProcessFlowInit implements Callable {
 			
 			// 如果获取记录过程遇到错误，则关闭数据库连接
 			release();		
+		} finally {
+			try {
+				dcETLHelper.close();
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 		
 		/////////////////////////////////////
@@ -220,7 +275,8 @@ public class ProcessFlowInit implements Callable {
 						                   GlobalInfo.DC_QUEUES_RUNNING_STS,  //status_code
 						                   null,  //process_message
 						                   "Y",  //start_process_datetime
-										   "N"  //end_process_datetime
+										   "NULL",  //end_process_datetime
+										   "N"  //retry_times_flag
 						                   ).updateTaskQueueStatus();
 				// Lock success
 				flag = true;
@@ -228,6 +284,24 @@ public class ProcessFlowInit implements Callable {
 				// 设置处理状态为running －即锁定
 				dcProcessTaskQueues.setStatus_code(GlobalInfo.DC_QUEUES_RUNNING_STS);
 				dcProcessTaskQueues.setProcess_message(null);
+				
+				//======================
+				// 添加node节点监控
+				//======================
+				if ("Y".equals(GlobalInfo.ENABLE_ACTIVITY_NODE_FLAG)) {
+					try {
+						String activeNodeId = SystemHelper.insertActivityNodes(dcETLHelper, dcProcessTaskQueues.getSource_sys_key(),
+																			   dcProcessTaskQueues.getProcess_group_id(), 0, null,
+																			   parentNodeId == "-1" ? null : "SOURCE FROM MQ", 
+																			   parentNodeId);
+						dcProcessTaskQueues.setActive_node_id(activeNodeId);
+						LogManager.appendToLog("ProcessFlowInit.setActive_node_id == [ " + dcProcessTaskQueues.getActive_node_id() +" ]");
+					} catch (Exception e) {
+						e.printStackTrace();
+						LogManager.appendToLog("ProcessFlowInit.insertActivityNodes => [Insert Data Failed] Exception:" + e.toString(),
+												GlobalInfo.EXCEPTION_MODE);
+					}
+				}
 				
 				LogManager.appendToLog("<<Lock successfully>>");
 			} catch (Exception e) {
@@ -244,8 +318,16 @@ public class ProcessFlowInit implements Callable {
 				
 				// 如果获取记录过程遇到错误，则关闭数据库连接
 				release();
+			} finally {
+				try {
+					dcETLHelper.close();
+				} catch (SQLException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 			}
-		}
+			
+		}// if
 		
 		LogManager.appendToLog("getProcessTaskAndLock => return flag:" + Boolean.toString(flag), GlobalInfo.STATEMENT_MODE);
 		LogManager.appendToLog("Leaving getProcessTaskAndLock() ---> ");

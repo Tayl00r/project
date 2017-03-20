@@ -1,5 +1,6 @@
 package utility;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,13 +38,18 @@ public class DpInstanceLogger extends Thread {
 			dcETLHelper.commit();
 			
 		} catch (Exception e) {
+			try {
+				dcETLHelper.rollback();
+			} catch (SQLException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 			e.printStackTrace();
 			LogManager.appendToLog("DpInstanceLogger.run() => Exception: " + e.toString() + " *** " + dcETLHelper.getCurrentErrorSql(),
 					GlobalInfo.EXCEPTION_MODE);
 		} finally {
 			if (dcETLHelper != null) {
 				try {
-					dcETLHelper.rollback();
 					dcETLHelper.closeAll();
 				} catch (Exception e) {
 					e.printStackTrace();

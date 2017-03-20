@@ -12,6 +12,7 @@ import config.GlobalInfo;
 import entity.DcProcessTaskQueueDetails;
 import entity.DcProcessTaskQueues;
 import utility.LogManager;
+import utility.SystemHelper;
 
 public class CallDataPurgeWebservices implements Callable {
 
@@ -38,12 +39,15 @@ public class CallDataPurgeWebservices implements Callable {
 		
 			if (sourceSysKeyTab != null && !"".equals(sourceSysKeyTab)) {
 				String[] parameter = new String[]{ dcProcessTaskQueues.getSource_sys_key(), 
-										dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue1(),
-										dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue2() };
+												   dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue1(),  //Schema
+												   dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue2(),  //表名
+												   dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue3(),  //开始清洗时间
+												   dcProcessTaskQueues.getDcProcessTaskQueueDetails().getValue4()   //结束清洗时间
+												   };
 				
 				// 调用数据清洗程序		    
 				IfaceReturns servicesRet = 
-						DataPurgeETLFactory.startDataPurgeEngine(new IfaceParameters(parameter[0], parameter[1], parameter[2]), 
+						DataPurgeETLFactory.startDataPurgeEngine(new IfaceParameters(parameter[0], parameter[1], parameter[2], parameter[3], parameter[4], "N"), 
 								GlobalInfo.DCETL_ENGIN_DO_PURGE);
 				
 				LogManager.appendToLog("  >>startDataPurgeEngine return: " + servicesRet.getReturnMsg() + GlobalInfo.LINE_SEPARATOR + 

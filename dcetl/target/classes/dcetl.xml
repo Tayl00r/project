@@ -25,7 +25,7 @@ http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/
     
     <flow name="dcetlMainFlow">
         <poll doc:name="Poll">
-            <fixed-frequency-scheduler frequency="30" timeUnit="MINUTES" startDelay="2"/>
+            <fixed-frequency-scheduler frequency="300" timeUnit="SECONDS" />
             <component class="component.ProcessFlowInit" doc:name="initTaskTabList&amp;Lock"/>
         </poll>
         <expression-filter expression="#[payload.size()&gt;0]" doc:name="Payload is not null"/>
@@ -35,7 +35,7 @@ http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/
             <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
             <component class="component.PostDataPurge" doc:name="updateStatus&amp;TransferToLog"/>
             <filter ref="CustomDcetlFilter" doc:name="Filter (message is not null)"/>
-            <component class="component.RmsCalSender" doc:name="Send to RMSCal"/>
+            <component class="component.RmsCalSender" doc:name="Send to RMS&amp;DW"/>
         </async>
         <catch-exception-strategy doc:name="Catch Exception Strategy">
             <set-payload value="Dcetl program @@#[server.dateTime.format(&quot;yyyy.MM.dd  HH:mm:ss&quot;)] run exception: #[exception.getDetailedMessage()]"  doc:name="Set Exception Info"/>

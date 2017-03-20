@@ -3,6 +3,8 @@ package config;
 import java.io.IOException;
 import java.util.Properties;
 
+import entity.DcSysDbConnMapping;
+import utility.DBHelper;
 import utility.LogManager;
 
 public class GlobalInfo {
@@ -47,11 +49,11 @@ public class GlobalInfo {
 	//多线程等待时间（单位:秒s）
 	public static final int MULTI_THREAD_TEST_PER_SECONDS = 10;  // 10s
 	// 分批提交数量
-	public static final int MAX_BATCH_SIZE = 5000;
+	public static final int MAX_BATCH_SIZE = 2000;
 	// 最大记录间隔天数
 	public static final int MAX_RECORDS_INTERVAL_DAYS = 7;
 	
-	// 最大获取任务队列尝试次数
+	// 最大获取任务队列尝试次数(0->1->2 最大尝试3次)
 	public static final int MAX_ACHIVE_TASK_RETRY_TIMES = 2;
 		
 	// 回车换行分隔符
@@ -66,10 +68,23 @@ public class GlobalInfo {
 	public static final String DC_QUEUES_SUCCESS_STS = "SUCCESS";
 	public static final String DC_QUEUES_ERROR_STS = "ERROR";
 	public static final String DC_QUEUES_WARNING_STS = "WARNING";  // 警告，仅用于流程状态控制，最终不更新到表
-		
+	
 	// MQ: all2dc消息队列名称
-	public static final String DC2DCETL_MQ_NAME = "DC2DCETL-HSCF-DataPurge-PRODUCTION";
+	public static final String DC2DCETL_MQ_NAME = "DC2DCETL-HSCF-DataPurge-PRODUCTION";  //数据导入后发送到DCETL的消息MQ NAME
 	public static String DCETL2RMS_MQ_NAME = null;
+	public static String DCETL2DW_MQ_NAME = null;
+	
+	// rms类型
+	public static final String DC2RMS_DCDATAENTRY = "DCDATAENTRY";
+	
+	//阳关包装特有逻辑
+	public static final String SCP_ETL_DB_NAME = "etl_sunshinecpc";
+	public static final String SCP_SOURCE_SYS_KEY = "sunshinecpc";
+	public static final String SCP_DCETL_INVOICE_HEADERS = "invoice_headers";
+	public static final String SCP_DCETL_INVOICE_LINES = "invoice_lines";
+	public static final String SCP_DCETL_PO_HEADERS_ALL = "po_headers_all";
+	public static final String SCP_ORDER_STS_APPROVED = "APPROVED";
+	public static final String SCP_ORDER_STS_OTHER = "OTHER";
 	
 	// 数据库操作相关用户owner
 	public static String SOUR_DB_OWNER = null;
@@ -94,11 +109,18 @@ public class GlobalInfo {
 	public static String ENABLE_DEBUG_FLAG = "Y";
 	public static int DEBUG_LEVEL = DEBUG_MODE;  // default debug mode
 	
+	// 启动activity_node节点监控程序
+	public static String ENABLE_ACTIVITY_NODE_FLAG = "Y";
+	
 	//读取配制文件标识
 	public static boolean IS_LOAD_PROPERTIES_FLAG = false;
 	
+	//数据库分库分表连接信息映射
+	public static String DB_DYNAMIC_CONN_URL = null;
+	
 	///////////////////////////////////////////////////////////////////////////
 	// 初始化全局变量
+	///////////////////////////////////////////////////////////////////////////
 	public static void init() throws IOException {
 		
 		LogManager.appendToLog("============================================================================", STATEMENT_MODE);
@@ -110,19 +132,44 @@ public class GlobalInfo {
 					.getResourceAsStream("../db_config.properties"));
 			
 			// enable debug flag: ENABLE_DEBUG_FLAG
-		    if (pps.containsKey("ENABLE_DEBUG_FLAG")) {
-		    	ENABLE_DEBUG_FLAG = pps.getProperty("ENABLE_DEBUG_FLAG");
-		    	LogManager.appendToLog("成功从启动配置文件中读取ENABLE_DEBUG_FLAG:" + ENABLE_DEBUG_FLAG, DEBUG_MODE);
+			if (System.getenv("ENABLE_DEBUG_FLAG") != null) {
+				ENABLE_DEBUG_FLAG = System.getenv("ENABLE_DEBUG_FLAG");
+				LogManager.appendToLog("成功读取环境变量值ENABLE_DEBUG_FLAG:" + ENABLE_DEBUG_FLAG, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置ENABLE_DEBUG_FLAG", DEBUG_MODE);
+			    if (pps.containsKey("ENABLE_DEBUG_FLAG")) {
+			    	ENABLE_DEBUG_FLAG = pps.getProperty("ENABLE_DEBUG_FLAG");
+			    	LogManager.appendToLog("成功从启动配置文件中读取ENABLE_DEBUG_FLAG:" + ENABLE_DEBUG_FLAG, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置ENABLE_DEBUG_FLAG", DEBUG_MODE);
+				}
 			}
-		    if (pps.containsKey("DEBUG_LEVEL")) {
-		    	DEBUG_LEVEL = Integer.parseInt(pps.getProperty("DEBUG_LEVEL"));
-		    	LogManager.appendToLog("成功从启动配置文件中读取DEBUG_LEVEL:" + DEBUG_LEVEL, DEBUG_MODE);
+			if(System.getenv("DEBUG_LEVEL") != null) {
+				DEBUG_LEVEL = Integer.parseInt(System.getenv("DEBUG_LEVEL"));
+		    	LogManager.appendToLog("成功读取环境变量值DEBUG_LEVEL:" + DEBUG_LEVEL, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置DEBUG_LEVEL", DEBUG_MODE);
+			    if (pps.containsKey("DEBUG_LEVEL")) {
+			    	DEBUG_LEVEL = Integer.parseInt(pps.getProperty("DEBUG_LEVEL"));
+			    	LogManager.appendToLog("成功从启动配置文件中读取DEBUG_LEVEL:" + DEBUG_LEVEL, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DEBUG_LEVEL", DEBUG_MODE);
+				}
 			}
 		    
+			//Dynamic DB CONN URL
+			if(System.getenv("DB_DYNAMIC_CONN_URL") != null) {
+				DB_DYNAMIC_CONN_URL = System.getenv("DB_DYNAMIC_CONN_URL");
+				LogManager.appendToLog("成功读取环境变量值DB_DYNAMIC_CONN_URL:" + DB_DYNAMIC_CONN_URL, DEBUG_MODE);
+			} else {
+				if (pps.containsKey("DB_DYNAMIC_CONN_URL")) {
+					if (DB_DYNAMIC_CONN_URL == null) {
+						DB_DYNAMIC_CONN_URL = pps.getProperty("DB_DYNAMIC_CONN_URL");
+					}
+					LogManager.appendToLog("成功从启动配置文件中读取DB_DYNAMIC_CONN_URL:" + DB_DYNAMIC_CONN_URL, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DB_DYNAMIC_CONN_URL", DEBUG_MODE);
+				}
+			}
+			
 			// DCETL DB CONNECTION
 			if (pps.containsKey("DB_DCETL_DRIVER")) {
 				if (DB_DCETL_DRIVER == null) {
@@ -132,29 +179,44 @@ public class GlobalInfo {
 			} else {
 				LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_DRIVER", DEBUG_MODE);
 			}
-			if (pps.containsKey("DB_DCETL_URL")) {
-				if (DB_DCETL_URL == null) {
-					DB_DCETL_URL = pps.getProperty("DB_DCETL_URL");
-				}
-				LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_URL:" + DB_DCETL_URL, DEBUG_MODE);
+			if(System.getenv("DB_ENV_DCETL_URL") != null) {
+				DB_DCETL_URL = System.getenv("DB_ENV_DCETL_URL");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_DCETL_URL:" + DB_DCETL_URL, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_URL", DEBUG_MODE);
+				if (pps.containsKey("DB_DCETL_URL")) {
+					if (DB_DCETL_URL == null) {
+						DB_DCETL_URL = pps.getProperty("DB_DCETL_URL");
+					}
+					LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_URL:" + DB_DCETL_URL, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_URL", DEBUG_MODE);
+				}
 			}
-			if (pps.containsKey("DB_DCETL_USER_NAME")) {
-				if (DB_DCETL_USER_NAME == null) {
-					DB_DCETL_USER_NAME = pps.getProperty("DB_DCETL_USER_NAME");
-				}
-				LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_USER_NAME:" + DB_DCETL_USER_NAME, DEBUG_MODE);
+			if(System.getenv("DB_ENV_DCETL_USER_NAME") != null) {
+				DB_DCETL_USER_NAME = System.getenv("DB_ENV_DCETL_USER_NAME");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_DCETL_USER_NAME:" + DB_DCETL_USER_NAME, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_USER_NAME", DEBUG_MODE);
+				if (pps.containsKey("DB_DCETL_USER_NAME")) {
+					if (DB_DCETL_USER_NAME == null) {
+						DB_DCETL_USER_NAME = pps.getProperty("DB_DCETL_USER_NAME");
+					}
+					LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_USER_NAME:" + DB_DCETL_USER_NAME, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_USER_NAME", DEBUG_MODE);
+				}
 			}
-			if (pps.containsKey("DB_DCETL_PASSWORD")) {
-				if (DB_DCETL_PASSWORD == null) {
-					DB_DCETL_PASSWORD = pps.getProperty("DB_DCETL_PASSWORD");
-				}
-				LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_PASSWORD:" + DB_DCETL_PASSWORD, DEBUG_MODE);
+			if(System.getenv("DB_ENV_DCETL_PASSWORD") != null) {
+				DB_DCETL_PASSWORD = System.getenv("DB_ENV_DCETL_PASSWORD");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_DCETL_PASSWORD:" + DB_DCETL_PASSWORD, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_PASSWORD", DEBUG_MODE);
+				if (pps.containsKey("DB_DCETL_PASSWORD")) {
+					if (DB_DCETL_PASSWORD == null) {
+						DB_DCETL_PASSWORD = pps.getProperty("DB_DCETL_PASSWORD");
+					}
+					LogManager.appendToLog("成功从启动配置文件中读取DB_DCETL_PASSWORD:" + DB_DCETL_PASSWORD, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DB_DCETL_PASSWORD", DEBUG_MODE);
+				}
 			}
 			
 			// SRM DB CONNECTION
@@ -171,14 +233,19 @@ public class GlobalInfo {
 		    } else {
 		    	LogManager.appendToLog("从启动配置文件中找不到配置DB_SRM_URL", DEBUG_MODE);
 		    }*/
-		    if (pps.containsKey("DB_SRM_USER_NAME")) {
-		    	if (DB_SRM_USER_NAME == null) {
-		    		DB_SRM_USER_NAME = pps.getProperty("DB_SRM_USER_NAME");
-		    	}
-		    	LogManager.appendToLog("成功从启动配置文件中读取DB_SRM_USER_NAME:" + DB_SRM_USER_NAME, DEBUG_MODE);
-		    } else {
-		    	LogManager.appendToLog("从启动配置文件中找不到配置DB_SRM_USER_NAME", DEBUG_MODE);
-		    }
+			if(System.getenv("DB_ENV_SRM_SCHEMA") != null) {
+				DB_SRM_USER_NAME = System.getenv("DB_ENV_SRM_SCHEMA");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_SRM_SCHEMA:" + DB_SRM_USER_NAME, DEBUG_MODE);
+			} else {
+			    if (pps.containsKey("DB_SRM_USER_NAME")) {
+			    	if (DB_SRM_USER_NAME == null) {
+			    		DB_SRM_USER_NAME = pps.getProperty("DB_SRM_USER_NAME");
+			    	}
+			    	LogManager.appendToLog("成功从启动配置文件中读取DB_SRM_USER_NAME:" + DB_SRM_USER_NAME, DEBUG_MODE);
+			    } else {
+			    	LogManager.appendToLog("从启动配置文件中找不到配置DB_SRM_USER_NAME", DEBUG_MODE);
+			    }
+			}
 		    /*
 		    if (pps.containsKey("DB_SRM_PASSWORD")) {
 		    	DB_SRM_PASSWORD = pps.getProperty("DB_SRM_PASSWORD");
@@ -188,34 +255,78 @@ public class GlobalInfo {
 		    }*/
 		    
 		    // rms：获取lookup 信息
-		    if (pps.containsKey("DB_RMS_OWNER")) {
-		    	if (DB_RMS_OWNER == null) {
-		    		DB_RMS_OWNER = pps.getProperty("DB_RMS_OWNER");
-		    	}
-		    	LogManager.appendToLog("成功从启动配置文件中读取DB_RMS_OWNER:" + DB_RMS_OWNER, DEBUG_MODE);
+			if(System.getenv("DB_ENV_RMS_SCHEMA") != null) {
+				DB_RMS_OWNER = System.getenv("DB_ENV_RMS_SCHEMA");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_RMS_SCHEMA:" + DB_RMS_OWNER, DEBUG_MODE);
 			} else {
-				LogManager.appendToLog("从启动配置文件中找不到配置DB_RMS_OWNER", DEBUG_MODE);
+			    if (pps.containsKey("DB_RMS_OWNER")) {
+			    	if (DB_RMS_OWNER == null) {
+			    		DB_RMS_OWNER = pps.getProperty("DB_RMS_OWNER");
+			    	}
+			    	LogManager.appendToLog("成功从启动配置文件中读取DB_RMS_OWNER:" + DB_RMS_OWNER, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置DB_RMS_OWNER", DEBUG_MODE);
+				}
 			}
 			
 			//monitor：获取queues 信息
-		    if(pps.containsKey("DB_MONITOR_OWNER")){
-		    	if (DB_MONITOR_OWNER == null) {
-		    		DB_MONITOR_OWNER = pps.getProperty("DB_MONITOR_OWNER");
-		    	}
-		    	LogManager.appendToLog("成功从启动配置文件中读取DB_MONITOR_OWNER:" + DB_MONITOR_OWNER, DEBUG_MODE);
-		    } else {
-		    	LogManager.appendToLog("从启动配置文件中找不到配置DB_MONITOR_OWNER:" + DB_MONITOR_OWNER, DEBUG_MODE);
-		    }
+			if(System.getenv("DB_ENV_MONITOR_SCHEMA") != null) {
+				DB_MONITOR_OWNER = System.getenv("DB_ENV_MONITOR_SCHEMA");
+				LogManager.appendToLog("成功读取环境变量值DB_ENV_MONITOR_SCHEMA:" + DB_MONITOR_OWNER, DEBUG_MODE);
+			} else {
+			    if(pps.containsKey("DB_MONITOR_OWNER")){
+			    	if (DB_MONITOR_OWNER == null) {
+			    		DB_MONITOR_OWNER = pps.getProperty("DB_MONITOR_OWNER");
+			    	}
+			    	LogManager.appendToLog("成功从启动配置文件中读取DB_MONITOR_OWNER:" + DB_MONITOR_OWNER, DEBUG_MODE);
+			    } else {
+			    	LogManager.appendToLog("从启动配置文件中找不到配置DB_MONITOR_OWNER:" + DB_MONITOR_OWNER, DEBUG_MODE);
+			    }
+			}
 		    
 		    //dcetl2rms MQ Name
-		    if(pps.containsKey("ACTIVEMQ_DCETL2RMS_MQ_NAME")){
-		    	if (DCETL2RMS_MQ_NAME == null) {
-		    		DCETL2RMS_MQ_NAME = pps.getProperty("ACTIVEMQ_DCETL2RMS_MQ_NAME");
-		    	}
-		    	LogManager.appendToLog("成功从启动配置文件中读取ACTIVEMQ_DCETL2RMS_MQ_NAME:" + DCETL2RMS_MQ_NAME, DEBUG_MODE);
-		    } else {
-		    	LogManager.appendToLog("从启动配置文件中找不到配置ACTIVEMQ_DCETL2RMS_MQ_NAME:" + DCETL2RMS_MQ_NAME, DEBUG_MODE);
-		    }
+			if(System.getenv("MQ_ENV_DCETL2RMS_QNAME") != null) {
+				DCETL2RMS_MQ_NAME = System.getenv("MQ_ENV_DCETL2RMS_QNAME");
+				LogManager.appendToLog("成功读取环境变量值MQ_ENV_DCETL2RMS_QNAME:" + DCETL2RMS_MQ_NAME, DEBUG_MODE);
+			} else {
+			    if(pps.containsKey("ACTIVEMQ_DCETL2RMS_MQ_NAME")){
+			    	if (DCETL2RMS_MQ_NAME == null) {
+			    		DCETL2RMS_MQ_NAME = pps.getProperty("ACTIVEMQ_DCETL2RMS_MQ_NAME");
+			    	}
+			    	LogManager.appendToLog("成功从启动配置文件中读取ACTIVEMQ_DCETL2RMS_MQ_NAME:" + DCETL2RMS_MQ_NAME, DEBUG_MODE);
+			    } else {
+			    	LogManager.appendToLog("从启动配置文件中找不到配置ACTIVEMQ_DCETL2RMS_MQ_NAME:" + DCETL2RMS_MQ_NAME, DEBUG_MODE);
+			    }
+			}
+			
+			 //dcetl2dw MQ Name
+			if(System.getenv("MQ_ENV_DCETL2DW_QNAME") != null) {
+				DCETL2DW_MQ_NAME = System.getenv("MQ_ENV_DCETL2DW_QNAME");
+				LogManager.appendToLog("成功读取环境变量值MQ_ENV_DCETL2DW_QNAME:" + DCETL2DW_MQ_NAME, DEBUG_MODE);
+			} else {
+			    if(pps.containsKey("ACTIVEMQ_DCETL2DW_MQ_NAME")){
+			    	if (DCETL2DW_MQ_NAME == null) {
+			    		DCETL2DW_MQ_NAME = pps.getProperty("ACTIVEMQ_DCETL2DW_MQ_NAME");
+			    	}
+			    	LogManager.appendToLog("成功从启动配置文件中读取ACTIVEMQ_DCETL2DW_MQ_NAME:" + DCETL2DW_MQ_NAME, DEBUG_MODE);
+			    } else {
+			    	LogManager.appendToLog("从启动配置文件中找不到配置ACTIVEMQ_DCETL2DW_MQ_NAME:" + DCETL2DW_MQ_NAME, DEBUG_MODE);
+			    }
+			}
+			
+			
+			//启动activity_node节点监控程序
+			if(System.getenv("ENABLE_ACTIVITY_NODE_FLAG") != null) {
+				ENABLE_ACTIVITY_NODE_FLAG = System.getenv("ENABLE_ACTIVITY_NODE_FLAG");
+		    	LogManager.appendToLog("成功读取环境变量值ENABLE_ACTIVITY_NODE_FLAG:" + ENABLE_ACTIVITY_NODE_FLAG, DEBUG_MODE);
+			} else {
+			    if (pps.containsKey("ENABLE_ACTIVITY_NODE_FLAG")) {
+			    	ENABLE_ACTIVITY_NODE_FLAG = pps.getProperty("ENABLE_ACTIVITY_NODE_FLAG");
+			    	LogManager.appendToLog("成功从启动配置文件中读取ENABLE_ACTIVITY_NODE_FLAG:" + ENABLE_ACTIVITY_NODE_FLAG, DEBUG_MODE);
+				} else {
+					LogManager.appendToLog("从启动配置文件中找不到配置ENABLE_ACTIVITY_NODE_FLAG", DEBUG_MODE);
+				}
+			}
 		    
 		    // from SRM to DCETL
 		    if (SOUR_DB_OWNER == null) {

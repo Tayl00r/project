@@ -1,5 +1,6 @@
 package utility;
 
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -110,6 +111,7 @@ public class SystemHelper {
 			args.clear();
 			flag = true;
 		} catch (Exception e) {
+			dcETLHelper.rollback();
 			e.printStackTrace();
 			LogManager.appendToLog("SystemHelper.transferQueuesToLogAndDelete() => Exception:" + e.toString(), 
 									GlobalInfo.EXCEPTION_MODE);
@@ -144,6 +146,7 @@ public class SystemHelper {
 			args.clear();
 			flag = true;
 		} catch (Exception e) {
+			dcETLHelper.rollback();
 			e.printStackTrace();
 			LogManager.appendToLog("SystemHelper.transferQueuesDetailsAndDelete() => Exception:" + e.toString(), 
 									GlobalInfo.EXCEPTION_MODE);
@@ -153,5 +156,78 @@ public class SystemHelper {
 		}
 		return flag;
 	}
+	
+	// activity_nodes
+	public static String insertActivityNodes(DBHelper dcETLHelper, 
+											 String sourceSysKey, String processBatchNo, int nodeSeq,
+											 String nodeMessage, String description, String parentNodeId) 
+					throws SQLException, ClassNotFoundException {
+
+		if (dcETLHelper == null) {
+		 //DBHelper dcETLHelper = 
+				dcETLHelper = new DBHelper(GlobalInfo.DB_DCETL_DRIVER, 
+											GlobalInfo.DB_DCETL_URL,
+											GlobalInfo.DB_DCETL_USER_NAME, 
+											GlobalInfo.DB_DCETL_PASSWORD, null);
+		}
+		
+		String uuid = null;
+		try {
+			dcETLHelper.prepareSql(GlobalSql.MONITOR_ACTIVITY_NODES_INSERT);
+			List<Object> params = new ArrayList<Object>();
+			uuid = GeneratorUUID.generateUUID();
+			params.add(uuid);
+			params.add(processBatchNo);
+			params.add(sourceSysKey);
+			params.add("3");
+			params.add("DCETL");
+			params.add(getNodeStatus(nodeSeq)); 					 // node_status
+			params.add(nodeMessage);
+			params.add(parentNodeId == null ? "-1" : parentNodeId);						    	 // parent_node_id
+			params.add(description == null ? "NODE FROM DCETL" : description);
+			params.add(0);
+			dcETLHelper.setAndExecuteDML(params);
+			dcETLHelper.commit();
+			return uuid;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return null;
+		} finally {
+			dcETLHelper.close();
+		}
+
+	}
+	
+	public static void updateNodes(String nodeId, int nodeSeq, String nodeDesc) throws SQLException, ClassNotFoundException {
+		DBHelper dbHelper = new DBHelper(GlobalInfo.DB_DCETL_DRIVER, GlobalInfo.DB_DCETL_URL,
+				GlobalInfo.DB_DCETL_USER_NAME, GlobalInfo.DB_DCETL_PASSWORD, null);
+		PreparedStatement prepareStatement = null;
+		try {
+			prepareStatement = dbHelper.conn.prepareStatement(GlobalSql.MONITOR_ACTIVITY_UPDATE);
+			prepareStatement.setString(1, getNodeStatus(nodeSeq));
+			prepareStatement.setString(2, nodeDesc);
+			prepareStatement.setString(3, nodeId);
+			prepareStatement.executeUpdate();
+			dbHelper.commit();
+		} catch (Exception e) {
+			e.printStackTrace();
+			LogManager.appendToLog("SystemHelper.updateNodes() => Exception:" + e.toString(), 
+					GlobalInfo.EXCEPTION_MODE);
+		} finally {
+			dbHelper.closeAll();
+		}
+	}
+
+	public static String getNodeStatus(int nodeSeq) {
+		if (nodeSeq == 0) {
+			return GlobalInfo.DC_QUEUES_RUNNING_STS;
+		} else if (nodeSeq == 1) {
+			return GlobalInfo.DC_QUEUES_SUCCESS_STS;
+		} else if (nodeSeq == 00){
+			return null;
+		}
+		return GlobalInfo.DC_QUEUES_ERROR_STS;
+	}
+	
 
 }

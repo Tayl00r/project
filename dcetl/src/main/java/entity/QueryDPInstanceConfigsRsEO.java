@@ -19,6 +19,7 @@ public class QueryDPInstanceConfigsRsEO {
 	private Date last_dp_datetime;
 	private String dp_inst_config_autoc_id;
 	private String source_sys_key;
+	private String dp_rules_header_id;  // 规则头ID
     
     public QueryDPInstanceConfigsRsEO() {
     }
@@ -37,7 +38,8 @@ public class QueryDPInstanceConfigsRsEO {
 									  int dp_tolerance_seconds,
 									  Date last_dp_datetime,
 									  String dp_inst_config_autoc_id,
-									  String source_sys_key) {
+									  String source_sys_key,
+									  String dp_rules_header_id) {
 		super();
 		this.dp_inst_config_id = dp_inst_config_id;
 		this.source_dp_table_owner = source_dp_table_owner;
@@ -54,6 +56,7 @@ public class QueryDPInstanceConfigsRsEO {
 		this.last_dp_datetime = last_dp_datetime;
 		this.dp_inst_config_autoc_id = dp_inst_config_autoc_id;
 		this.source_sys_key = source_sys_key;
+		this.dp_rules_header_id = dp_rules_header_id;
 	}
 	
 	public String getDp_inst_config_id() {
@@ -157,6 +160,28 @@ public class QueryDPInstanceConfigsRsEO {
 
 	public void setSource_sys_key(String source_sys_key) {
 		this.source_sys_key = source_sys_key;
+	}
+
+	public String getDp_rules_header_id() {
+		return dp_rules_header_id;
+	}
+
+	public void setDp_rules_header_id(String dp_rules_header_id) {
+		this.dp_rules_header_id = dp_rules_header_id;
+	}
+
+	@Override
+	public String toString() {
+		return "QueryDPInstanceConfigsRsEO [dp_inst_config_id=" + dp_inst_config_id + ", source_dp_table_owner="
+				+ source_dp_table_owner + ", source_dp_table_name=" + source_dp_table_name
+				+ ", source_dp_tab_filter_condit1=" + source_dp_tab_filter_condit1 + ", source_dp_tab_filter_condit2="
+				+ source_dp_tab_filter_condit2 + ", source_dp_tab_filter_condit3=" + source_dp_tab_filter_condit3
+				+ ", source_dp_tab_filter_condit4=" + source_dp_tab_filter_condit4 + ", source_dp_tab_filter_condit5="
+				+ source_dp_tab_filter_condit5 + ", dest_dp_table_owner=" + dest_dp_table_owner
+				+ ", dest_dp_table_name=" + dest_dp_table_name + ", do_dp_per_seconds=" + do_dp_per_seconds
+				+ ", dp_tolerance_seconds=" + dp_tolerance_seconds + ", last_dp_datetime=" + last_dp_datetime
+				+ ", dp_inst_config_autoc_id=" + dp_inst_config_autoc_id + ", source_sys_key=" + source_sys_key 
+				+ ", dp_rules_header_id=" + dp_rules_header_id + "]";
 	}
     
 }

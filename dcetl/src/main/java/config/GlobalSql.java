@@ -2,18 +2,45 @@ package config;
 
 public class GlobalSql {
 	
+	//获取分库分表的数据库连接信息
+	public static final String QUERY_SYS_DB_CONN_MAPPING
+	  = "select t.source_sys_key, " + 
+		"       t.db_host, " + 
+		"       t.db_port, " + 
+		"       t.db_schema, " + 
+		"       t.db_conn_user, " + 
+		"       t.db_conn_password " + 
+		"  from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_sys_db_conn_mapping t " + 
+		" where t.enabled_flag = 'Y' " + 
+		"   and t.source_sys_key = ? ";
+	
 	// 根据 表owner + 表名  + 列名 获取列是否存在
 	public static final String CHK_TAB_COLUMN_EXISTS_SQL
 	 	= "select count(1) AS TOTAL_COL_ROW_COUNT" +
-	 	  "  from information_schema.COLUMNS col " + 
-	      " where col.TABLE_SCHEMA = ? " + 
+	 	  "  from " + GlobalInfo.DEST_DB_OWNER + ".DP_TAB_COLUMNS col " + 
+	      " where col.ENABLED_FLAG = 'Y' " + 
+	 	  "   and col.TABLE_SCHEMA = ? " + 
 	 	  "   and col.TABLE_NAME = ? " + 
 	 	  "   and col.COLUMN_NAME = ? " + 
 	 	  " LIMIT 1 ";
 	
+	// 获取规则头ID
+	public static final String QUERY_SOUR_TAB_RULES_HEADER_ID
+	= "select distinct drh.DP_RULES_HEADER_ID " + 
+	  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh, " + 
+	  "       " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all   drl" +  
+	  " where drh.DP_RULES_HEADER_ID = drl.DP_RULES_HEADER_ID " + 
+	  "   and drh.ENABLED_FLAG = 'Y' " + 
+	  "   and drh.VALIDATED_FLAG = 'Y' " + 
+	 // "   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
+	  "   and drh.SOURCE_TABLE_OWNER = ? " + 
+	  "   and drh.SOURCE_TABLE_NAME = ? " + 
+	  "   and drh.SOURCE_SYS_KEY = ? ";
+	
 	// 维护了规则: 根据 source_sys_key + table_owner + table_name 获取存在规则的列信息
 	public static final String QUERY_SOUR_TAB_COLUMNS_IN_RULES
-		= "select drh.SOURCE_SYS_KEY, " + 
+		= "select drh.DP_RULES_HEADER_ID, " + 
+	      "       drh.SOURCE_SYS_KEY, " + 
 		  "       drh.SOURCE_TABLE_OWNER, " + 
 		  "       drh.SOURCE_TABLE_NAME, " + 
 		  "       drh.DEST_TABLE_OWNER, " + 
@@ -22,28 +49,30 @@ public class GlobalSql {
 		  "       drh.WHERE_CONDITION_SQL, " + 
 		  "       drl.SOURCE_TAB_COLUMN_NAME, " + 
 		  "       ifnull(drl.DP_RETURN_COLUMN_VAL, " + 
-		  "              ifnull(get_dp_rules_field_map_case_exp(drh.SOURCE_SYS_KEY, drh.SOURCE_TABLE_OWNER, drh.SOURCE_TABLE_NAME, drl.SOURCE_TAB_COLUMN_NAME, drl.DP_RULES_LINE_ID), " + 
+		  "              ifnull(" + GlobalInfo.DEST_DB_OWNER + ".get_dp_rules_field_map_case_exp(drh.SOURCE_SYS_KEY, drh.SOURCE_TABLE_OWNER, drh.SOURCE_TABLE_NAME, drl.SOURCE_TAB_COLUMN_NAME, drl.DP_RULES_LINE_ID), " + 
 		  "                     CONCAT('" + GlobalInfo.SOUR_TAB_ALIAS_NAME + "', '.', drl.SOURCE_TAB_COLUMN_NAME))) DP_RETURN_COLUMN_VAL, " + 
 		  "       drl.DEST_TAB_COLUMN_NAME, " + 
 		  "       col.COLUMN_NAME " + 
 		  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh, " + 
 		  "       " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all   drl, " + 
-		  "       information_schema.COLUMNS     col " + 
+		  "       " + GlobalInfo.DEST_DB_OWNER + ".DP_TAB_COLUMNS       col " + 
 		  " where drh.DP_RULES_HEADER_ID = drl.DP_RULES_HEADER_ID " + 
 		  "   and drl.SOURCE_TAB_COLUMN_NAME = col.COLUMN_NAME " + 
 		  "   and drh.ENABLED_FLAG = 'Y' " + 
 		  "   and ((? = 'Y' and drh.VALIDATED_FLAG = 'Y') or ? = 'N') " + 
-		  "   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
+		  //"   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
 		  "   and drh.SOURCE_TABLE_OWNER = col.TABLE_SCHEMA " + 
 		  "   and drh.SOURCE_TABLE_NAME = col.TABLE_NAME " + 
 		  "   and drh.SOURCE_SYS_KEY = ? " + 
+		  "   and col.ENABLED_FLAG = 'Y' " + 
 		  "   and col.TABLE_SCHEMA = ? " + 
 		  "   and col.TABLE_NAME = ? " + 
 		  " order by col.ORDINAL_POSITION, drl.LINE_NUM asc ";
 	
 	// 维护了规则: 排除规则行表列的其他列
 	public static final String QUERY_SOUR_TAB_COLUMNS_NOTIN_RULES
-		= "select drh.SOURCE_SYS_KEY, " + 
+		= "select drh.DP_RULES_HEADER_ID, " + 
+	      "       drh.SOURCE_SYS_KEY, " + 
 		  "       drh.SOURCE_TABLE_OWNER, " + 
 		  "       drh.SOURCE_TABLE_NAME, " + 
 		  "       drh.DEST_TABLE_OWNER, " + 
@@ -55,13 +84,14 @@ public class GlobalSql {
 		  "       col.COLUMN_NAME DEST_TAB_COLUMN_NAME, " + 
 		  "       col.COLUMN_NAME " + 
 		  "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh, " + 
-		  "       information_schema.COLUMNS     col " + 
+		  "       " + GlobalInfo.DEST_DB_OWNER + ".DP_TAB_COLUMNS       col " + 
 		  " where drh.ENABLED_FLAG = 'Y' " + 
 		  "   and ((? = 'Y' and drh.VALIDATED_FLAG = 'Y') or ? = 'N') " + 
-		  "   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
+		  //"   and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
 		  "   and drh.SOURCE_TABLE_OWNER = col.TABLE_SCHEMA " + 
 		  "   and drh.SOURCE_TABLE_NAME = col.TABLE_NAME " + 
 		  "   and drh.SOURCE_SYS_KEY = ? " + 
+		  "   and col.ENABLED_FLAG = 'Y' " + 
 		  "   and col.TABLE_SCHEMA = ? " + 
 		  "   and col.TABLE_NAME = ? " + 
 		  "   and not exists ( select 1 " + 
@@ -74,8 +104,9 @@ public class GlobalSql {
 	// 未维护规则: 取出表对应的列
 	public static final String QUERY_TAB_COLUMNS
  	= "select col.COLUMN_NAME " +
- 	  "  from information_schema.COLUMNS col " + 
-      " where col.TABLE_SCHEMA = ? " + 
+ 	  "  from " + GlobalInfo.DEST_DB_OWNER + ".DP_TAB_COLUMNS col " + 
+      " where col.ENABLED_FLAG = 'Y' " + 
+ 	  "   and col.TABLE_SCHEMA = ? " + 
  	  "   and col.TABLE_NAME = ? " + 
       " order by col.ORDINAL_POSITION asc";
 	
@@ -86,16 +117,16 @@ public class GlobalSql {
           "      " + GlobalInfo.DB_RMS_OWNER + ".afwk_lookup_values    lkv, " + 
           "      " + GlobalInfo.DB_RMS_OWNER + ".afwk_lookup_values_tl lkv_tl " + 
           "WHERE lkv_sys.ENABLE_FLAG = 'Y' " + 
-          "  AND now() BETWEEN ifnull(lkv_sys.START_DATE_ACTIVE, now() - 1) AND " + 
-          "      ifnull(lkv_sys.END_DATE_ACTIVE, now() + 1) " + 
+          //"  AND now() BETWEEN ifnull(lkv_sys.START_DATE_ACTIVE, now() - 1) AND " + 
+          //"      ifnull(lkv_sys.END_DATE_ACTIVE, now() + 1) " + 
           "  AND lkv_sys.LOOKUP_CODE = ifnull(?, lkv_sys.LOOKUP_CODE) " + 
           "  AND lkv_sys.LOOKUP_TYPE = lkv.LOOKUP_CODE " + 
           "  AND lkv.LOOKUP_TYPE = lkv_tl.LOOKUP_TYPE " + 
           "  AND lkv.LOOKUP_CODE = lkv_tl.LOOKUP_CODE " + 
           "  AND lkv_tl.NAME = ? " + 
           "  AND lkv.ENABLE_FLAG = 'Y' " + 
-          "  AND now() BETWEEN ifnull(lkv.START_DATE_ACTIVE, now() - 1) AND " + 
-          "      ifnull(lkv.END_DATE_ACTIVE, now() + 1) " + 
+          //"  AND now() BETWEEN ifnull(lkv.START_DATE_ACTIVE, now() - 1) AND " + 
+          //"      ifnull(lkv.END_DATE_ACTIVE, now() + 1) " + 
           "  AND lkv.LOOKUP_TYPE = ? " + 
           " LIMIT 1 ";
 	
@@ -115,13 +146,25 @@ public class GlobalSql {
           "	      ifnull(autc.DP_TOLERANCE_SECONDS, cfg.DP_TOLERANCE_SECONDS) DP_TOLERANCE_SECONDS, " + 
           "       autc.LAST_DP_DATETIME, " + 
           "       autc.DP_INST_CONFIG_AUTOC_ID, " +
-          "       ifnull(autc.SOURCE_SYS_KEY, ?) SOURCE_SYS_KEY" + 
+          "       ifnull(autc.SOURCE_SYS_KEY, ?) SOURCE_SYS_KEY, " +
+          "       (select distinct drh.DP_RULES_HEADER_ID " + 
+          "  		from " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_headers_all drh, " + 
+          "       		 " + GlobalInfo.DEST_DB_OWNER + ".dp_rules_lines_all   drl" +  
+          " 		where drh.DP_RULES_HEADER_ID = drl.DP_RULES_HEADER_ID " + 
+          "   		  and drh.ENABLED_FLAG = 'Y' " + 
+          "   		  and drh.VALIDATED_FLAG = 'Y' " + 
+          //"   		  and now() between ifnull(drh.START_DATE, now()-1) and ifnull(drh.END_DATE, now()+1) " + 
+          "   		  and drh.SOURCE_TABLE_OWNER = cfg.SOURCE_DP_TABLE_OWNER " + 
+          "   		  and drh.SOURCE_TABLE_NAME = cfg.SOURCE_DP_TABLE_NAME " + 
+          "   		  and drh.DEST_TABLE_OWNER = cfg.DEST_DP_TABLE_OWNER " + 
+          "   		  and drh.DEST_TABLE_NAME = cfg.DEST_DP_TABLE_NAME " + 
+          "   		  and drh.SOURCE_SYS_KEY = ifnull(autc.SOURCE_SYS_KEY, ?) ) AS DP_RULES_HEADER_ID" + 
           "  from " + GlobalInfo.DEST_DB_OWNER + ".dp_data_purge_inst_configs cfg " + 
           "  left join " + GlobalInfo.DEST_DB_OWNER + ".dp_data_purge_inst_configs_autoc autc " + 
           "       ON (autc.DP_INST_CONFIG_ID = cfg.DP_INST_CONFIG_ID and autc.source_sys_key = ? ) " + 
           " where 1 = 1 " + 
           "   and (autc.enabled_flag = 'Y' OR autc.enabled_flag IS NULL) " + 
-          "   /*and ( date_add(cfg.LAST_DP_DATETIME, interval cfg.DO_DP_PER_SECONDS second) <= now() or cfg.LAST_DP_DATETIME is null ) */" + 
+          //"   and ( date_add(cfg.LAST_DP_DATETIME, interval cfg.DO_DP_PER_SECONDS second) <= now() or cfg.LAST_DP_DATETIME is null ) " + 
           "   and ( date_add(autc.LAST_DP_DATETIME, interval autc.DO_DP_PER_SECONDS second) <= now() or autc.LAST_DP_DATETIME is null )" + 
           "   and cfg.ENABLED_FLAG = 'Y' " + 
           "   and cfg.SOURCE_DP_TABLE_OWNER = ifnull(?, cfg.SOURCE_DP_TABLE_OWNER) " + 
@@ -132,13 +175,13 @@ public class GlobalSql {
 		  "	                      " + GlobalInfo.DB_RMS_OWNER + ".afwk_lookup_values_tl lkv_tl " + 
 		  "	                where lkv_sys.LOOKUP_CODE = cfg.SOURCE_DP_TABLE_NAME " + 
 		  "	                  and lkv_sys.ENABLE_FLAG = 'Y' " + 
-		  "	                  and now() between ifnull(lkv_sys.START_DATE_ACTIVE, now()-1) and ifnull(lkv_sys.END_DATE_ACTIVE, now()+1) " + 
+		  //"	                  and now() between ifnull(lkv_sys.START_DATE_ACTIVE, now()-1) and ifnull(lkv_sys.END_DATE_ACTIVE, now()+1) " + 
 		  "	                  and lkv_sys.LOOKUP_TYPE = lkv.LOOKUP_CODE " + 
 		  "	                  and lkv.LOOKUP_TYPE = lkv_tl.LOOKUP_TYPE " + 
 		  "	                  and lkv.LOOKUP_CODE = lkv_tl.LOOKUP_CODE " + 
 		  "	                  and lkv_tl.NAME = ?  " + 
 		  "	                  and lkv.ENABLE_FLAG = 'Y' " + 
-		  "	                  and now() between ifnull(lkv.START_DATE_ACTIVE, now()-1) and ifnull(lkv.END_DATE_ACTIVE, now()+1) " + 
+		  //"	                  and now() between ifnull(lkv.START_DATE_ACTIVE, now()-1) and ifnull(lkv.END_DATE_ACTIVE, now()+1) " + 
 		  "	                  and lkv.LOOKUP_TYPE = ? " +  
 		  "	              )";
 	
@@ -151,8 +194,9 @@ public class GlobalSql {
           "   and h.SOURCE_TABLE_NAME = ? " + 
           "   and h.DEST_TABLE_OWNER = ? " + 
           "   and h.DEST_TABLE_NAME = ? " + 
-          "   and h.ENABLED_FLAG = 'Y' " + 
-          "   and now() between ifnull(h.START_DATE, now()-1) and ifnull(h.END_DATE, now()+1)";
+          "   and h.ENABLED_FLAG = 'Y' " /*+ 
+          "   and now() between ifnull(h.START_DATE, now()-1) and ifnull(h.END_DATE, now()+1)"
+          */;
 	
 	// 获取表的主键/唯一索引列
 	public static final String QUERY_TAB_UNIQUE_CONSTRAINT_COL 
@@ -235,15 +279,15 @@ public class GlobalSql {
 		"       " + GlobalInfo.DB_RMS_OWNER + ".afwk_lookup_values    alv, " + 
 		"       " + GlobalInfo.DB_RMS_OWNER + ".afwk_lookup_values_tl alvt " + 
 		" where alv_s.LOOKUP_TYPE = alv.LOOKUP_CODE " + 
-		"   and ifnull(alv_s.START_DATE_ACTIVE, now()) <= now() " + 
-		"   and ifnull(alv_s.END_DATE_ACTIVE, now()) >= now() " + 
+		//"   and ifnull(alv_s.START_DATE_ACTIVE, now()) <= now() " + 
+		//"   and ifnull(alv_s.END_DATE_ACTIVE, now()) >= now() " + 
 		"   and alv_s.ENABLE_FLAG = 'Y' " + 
 		"   and alv_s.LOOKUP_CODE = cfg.SOURCE_DP_TABLE_NAME " + 
 		"   and cfg.ENABLED_FLAG = 'Y' " + 
 		"   and alvt.LOOKUP_TYPE = alv.LOOKUP_TYPE " + 
 		"   and alvt.LOOKUP_CODE = alv.LOOKUP_CODE " + 
-		"   and ifnull(alv.START_DATE_ACTIVE, now()) <= now() " + 
-		"   and ifnull(alv.END_DATE_ACTIVE, now()) >= now() " + 
+		//"   and ifnull(alv.START_DATE_ACTIVE, now()) <= now() " + 
+		//"   and ifnull(alv.END_DATE_ACTIVE, now()) >= now() " + 
 		"   and alv.ENABLE_FLAG = 'Y' " + 
 		//" and alvt.NAME = 'highly'  " +
 		"   and alv.LOOKUP_TYPE = ? " + 
@@ -264,18 +308,18 @@ public class GlobalSql {
 		"		" + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues dptq, " +
         "   	" + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details dptqd " +
 		" where alv_s.LOOKUP_TYPE = alv.LOOKUP_CODE " + 
-		"   and ifnull(alv_s.START_DATE_ACTIVE, now()) <= now() " + 
-		"   and ifnull(alv_s.END_DATE_ACTIVE, now()) >= now() " + 
+		//"   and ifnull(alv_s.START_DATE_ACTIVE, now()) <= now() " + 
+		//"   and ifnull(alv_s.END_DATE_ACTIVE, now()) >= now() " + 
 		"   and alv_s.ENABLE_FLAG = 'Y' " + 
 		"   and alv_s.LOOKUP_CODE = cfg.SOURCE_DP_TABLE_NAME " + 
 		"   and cfg.ENABLED_FLAG = 'Y' " + 
 		"   and alvt.LOOKUP_TYPE = alv.LOOKUP_TYPE " + 
 		"   and alvt.LOOKUP_CODE = alv.LOOKUP_CODE " + 
-		"   and ifnull(alv.START_DATE_ACTIVE, now()) <= now() " + 
-		"   and ifnull(alv.END_DATE_ACTIVE, now()) >= now() " + 
+		//"   and ifnull(alv.START_DATE_ACTIVE, now()) <= now() " + 
+		//"   and ifnull(alv.END_DATE_ACTIVE, now()) >= now() " + 
 		"   and alv.ENABLE_FLAG = 'Y' " + 
 	    "   and upper(cfg.SOURCE_DP_TABLE_OWNER) = upper(dptqd.value1) " +
-	    "   and upper(cfg.SOURCE_DP_TABLE_NAME) = (dptqd.value2) " +
+	    "   and upper(cfg.SOURCE_DP_TABLE_NAME) = upper(dptqd.value2) " +
 		"   and upper(alvt.NAME) = upper(dptq.source_sys_key) " +
 	    "   and dptq.process_group_id = dptqd.process_group_id " +
 	    "   and alv.LOOKUP_TYPE = ? " + 
@@ -331,14 +375,46 @@ public class GlobalSql {
 	//查找一条DCETL的 PENDING 状态满足条件的数据（已获取锁的方式）
 	//如果有多条满足条件，则只取一条
 	public static final String QUERY_PROCESS_TASK_QUEUE_LIMIT1
-	   = "select task_queue_id, task_type_code, source_sys_key, process_group_id, source_ref_doc_id, status_code " + 
-		 "  from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues " + 
-		 " where status_code = '" + GlobalInfo.DC_QUEUES_PENDING_STS + "' " + 
-		 "   and task_type_code = '" + GlobalInfo.DC_QUEUES_TASK_TYPE + "' " +
-		 "   and enabled_flag = 'Y' " + 
-		 "   and source_sys_key = ifnull(?, source_sys_key) " + 
-		 "   and process_group_id = ifnull(?, process_group_id) " + 
-		 "   and source_ref_doc_id = ifnull(?, source_ref_doc_id) " + 
+	   = "select dptq.task_queue_id, dptq.task_type_code, dptq.source_sys_key, dptq.process_group_id, dptq.source_ref_doc_id, dptq.status_code, dptq.retry_times " + 
+		 "  from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues dptq" + 
+		 " where dptq.status_code = '" + GlobalInfo.DC_QUEUES_PENDING_STS + "' " + 
+		 "   and dptq.task_type_code = '" + GlobalInfo.DC_QUEUES_TASK_TYPE + "' " +
+		 "   and dptq.enabled_flag = 'Y' " + 
+		 "   and dptq.source_sys_key = ifnull(?, dptq.source_sys_key) " + 
+		 "   and dptq.process_group_id = ifnull(?, dptq.process_group_id) " + 
+		 "   and dptq.source_ref_doc_id = ifnull(?, dptq.source_ref_doc_id) " + 
+		 "   /* Fix bug: when running datapurge, more tasks start running */ " + 
+		 "   and not exists (select 1 " + 
+		 "                     from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details dptqd, " + 
+		 "                          " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details dptqd_x, " + 
+		 "                          " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues dptq_x " + 
+		 "                    where dptqd.process_group_id = dptq.process_group_id " +
+		 "                      and dptqd.type = '" + GlobalInfo.DC_QUEUE_DETAILS_TYPE + "' " + 
+		 "                      and dptqd.process_flag = 'N' " + 
+		 "                      and dptqd_x.process_group_id = dptq_x.process_group_id " + 
+		 "                      and dptqd_x.type = dptqd.type " + 
+		 "                      and dptqd_x.value1 = dptqd.value1 " + 
+		 "                      and dptqd_x.value2 = dptqd.value2 " + 
+		 "                      and dptqd_x.process_flag = dptqd.process_flag " + 
+		 "                      and dptq_x.task_type_code = dptq.task_type_code " + 
+		 "                      and dptq_x.source_sys_key = dptq.source_sys_key " + 
+		 "                      and dptq_x.task_queue_id = dptq.task_queue_id " + 
+		 "                      and dptq_x.enabled_flag = 'Y' " + 
+		 "                      and dptq_x.status_code = '" + GlobalInfo.DC_QUEUES_RUNNING_STS + "' " + 
+		 "                   ) " + 
+		 "   and not exists (select 1 " + 
+		 "                     from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details dptqd, " + 
+		 "                          " + GlobalInfo.DEST_DB_OWNER + ".dp_data_purge_concurrent_control ddpcc " + 
+		 "                    where dptqd.process_group_id = dptq.process_group_id " +
+		 "                      and dptqd.type = '" + GlobalInfo.DC_QUEUE_DETAILS_TYPE + "' " + 
+		 "                      and dptqd.process_flag = 'N' " + 
+		 "                      and upper(ddpcc.source_sys_key) = upper(dptq.source_sys_key) " + 
+		 "                      and upper(ddpcc.source_table_owner) = upper(dptqd.value1) " + 
+		 "                      and upper(ddpcc.source_table_name) = upper(dptqd.value2) " + 
+		 "                      and upper(ddpcc.dest_table_owner) = upper('" + GlobalInfo.DEST_DB_OWNER + "') " + 
+		 "                      and upper(ddpcc.dest_table_name) = upper(dptqd.value2) " + 
+		 "                      and ddpcc.concurrent_status = '" + GlobalInfo.CONCURRENT_RUNNING_STS + "' " + 
+		 "                   ) " + 
 		 " limit 1 " + 
 		 " for update ";
 	
@@ -361,8 +437,9 @@ public class GlobalSql {
 			= "update " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues dptq " + 
 			  "	  set dptq.status_code = ?, " + 
 			  "       dptq.process_message = ?, " + 
-			  "       dptq.start_process_datetime = CASE WHEN (? = 'Y') THEN now() ELSE dptq.start_process_datetime END, " + 
-			  "       dptq.end_process_datetime = CASE WHEN (? = 'Y') THEN now() ELSE dptq.end_process_datetime END, " + 
+			  "       dptq.start_process_datetime = CASE ? WHEN 'Y' THEN now() WHEN 'NULL' THEN null ELSE dptq.start_process_datetime END, " + 
+			  "       dptq.end_process_datetime = CASE ? WHEN 'Y' THEN now() WHEN 'NULL' THEN null ELSE dptq.end_process_datetime END, " + 
+			  "       dptq.retry_times = CASE ? WHEN 'Y' THEN dptq.retry_times+1 ELSE dptq.retry_times END, " + 
 			  "	      dptq.last_update_date = now(), " +
 			  "	      dptq.last_updated_by = user() " + 
 			  " where dptq.enabled_flag = 'Y' " + 
@@ -386,9 +463,9 @@ public class GlobalSql {
 		public static final String MOVE_QUEUES_2_QUEUES_LOGS 
 			= "insert into " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues_logs " + 
 			  "  (task_queue_id,task_type_code,source_sys_key,process_group_id,status_code,process_message,start_process_datetime," + 
-			  "   end_process_datetime,description,enabled_flag,creation_date,created_by,last_update_date,last_updated_by,version,source_ref_doc_id) " + 
+			  "   end_process_datetime,description,enabled_flag,creation_date,created_by,last_update_date,last_updated_by,version,source_ref_doc_id,retry_times) " + 
 			  "select task_queue_id,task_type_code,source_sys_key,process_group_id,status_code,process_message,start_process_datetime," + 
-			  "       end_process_datetime,description,enabled_flag,creation_date,created_by,last_update_date,last_updated_by,version,source_ref_doc_id " + 
+			  "       end_process_datetime,description,enabled_flag,creation_date,created_by,last_update_date,last_updated_by,version,source_ref_doc_id,retry_times " + 
 			  "  from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queues " + 
 			  " where enabled_flag = 'Y' " + 
 			  "   and task_type_code = ? " + //DCETL
@@ -399,8 +476,8 @@ public class GlobalSql {
 		//迁移数据details => details_log
 		public static final String MOVE_DETAILS_2_DETAILS_LOGS 
 			= "insert into " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details_logs" +
-		      "   (process_group_id,type,value1,value2,value3,value4,value5,process_flag,creation_date,last_update_date,process_message) " + 
-			  "select process_group_id,type,value1,value2,value3,value4,value5,process_flag," + 
+		      "   (task_queue_details_id,process_group_id,type,value1,value2,value3,value4,value5,process_flag,creation_date,last_update_date,process_message) " + 
+			  "select task_queue_details_id,process_group_id,type,value1,value2,value3,value4,value5,process_flag," + 
 		      "       creation_date,last_update_date,process_message " + 
 			  "  from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details " + 
 			  " where type = ? " +
@@ -421,5 +498,54 @@ public class GlobalSql {
 			= "delete from " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_task_queue_details " + 
 			  "		 where type = ? " + 
 			  "        and process_group_id = ? ";
-              
+		
+		// 获取数据库当前时间
+		public static final String QUERY_DB_NOW_DATE
+			= "select now() as DB_SYSDATE from dual";
+		
+		// 阳关概念包装的特殊逻辑，发票进入dc后更新相应的po_headers_all的order_status状态
+		public static final String SCP_UPDATE_PO_HEADERS_ORD_STS = 
+				"UPDATE " + GlobalInfo.SCP_ETL_DB_NAME + ".po_headers_all poh " + 
+				"   set poh.ORDER_STATUS = ?, " + 
+				"       poh.DC_LAST_UPDATE_DATE = now() " + 
+				" WHERE poh.ORDER_STATUS = ? " + 
+				"   AND poh.SOURCE_SYS_KEY = ? " +
+				"   AND EXISTS ( SELECT 1 " + 
+				"                  FROM " + GlobalInfo.SCP_ETL_DB_NAME + ".invoice_lines invl " + 
+				"                 WHERE invl.SOURCE_SYS_KEY = poh.SOURCE_SYS_KEY " + 
+				"                   AND invl.ORDER_HEADER_ID = poh.ORDER_HEADER_ID " + 
+				"               ) " ;
+		
+		// activity_nodes
+		public static final String MONITOR_ACTIVITY_NODES_INSERT = 
+ 			    "insert into " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_activity_nodes ( " +
+		 					 "   activity_node_id, " + 
+		 					 "   process_batch_no, " + 
+		 					 "   source_sys_key, " + 
+		 					 "   node_seq, " + 
+		 					 "   node_code, " + 
+		 					 "   node_process_status, " + 
+		 					 "   node_process_message, " + 
+		 					 "   start_datetime, " + 
+		 					 "   end_datetime, " + 
+		 					 "   parent_activity_node_id, " + 
+		 					 "   description, " + 
+		 					 "   creation_date, " +  
+		 					 "   created_by, " + 
+		 					 "   last_update_date, " + 
+		 					 "   last_updated_by, " + 
+		 					 "   version ) " +
+						"    values (?,?,?,?,?,?,?,now(),now(),?,?,now(),user(),now(),user(),?)";	
+		
+		public static final String MONITOR_ACTIVITY_UPDATE = 
+				"update " + GlobalInfo.DB_MONITOR_OWNER + ".dc_process_activity_nodes " +
+				"   set node_process_status = ifnull(?, node_process_status), " +
+				"       node_process_message = ?, " +		
+				"		end_datetime = now(), " +
+			    "	    last_update_date = now(), " +
+				"		last_updated_by = user() " + 
+			    " where activity_node_id = ? " + 
+				"   and node_code = 'DCETL' " +
+			    "   and node_seq = 3 ";
+		
 }
